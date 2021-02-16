@@ -1,0 +1,801 @@
+//some main I am using/making/reading - put on github so I can acsess this from any comp (or mainly my phone)
+
+#include "DirectXTemplatePCH.h"
+using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
+
+const LONG g_WindowWidth = 1280; 
+const LONG g_WindowHeight = 720;
+LPCSTR g_WindowClassName = ("DirectXWindowClass"); //window name
+LPCSTR g_WindowName = "DirectX Template"; //
+HWND g_WindowHandle = 0; //instance of window
+
+const BOOL g_EnableVSync = TRUE; //zero screen tear
+
+// Direct3D device and swap chain.
+ID3D11Device* g_d3dDevice = nullptr; // allocates gpu resources
+ID3D11DeviceContext* g_d3dDeviceContext = nullptr; //config rendering pipeline and draw geometry
+IDXGISwapChain* g_d3dSwapChain = nullptr; //stores buffers that are used for rendering data - also determines how buffers are swapperd when the rendered image should be presented
+
+// Render target view for the back buffer of the swap chain.
+ID3D11RenderTargetView* g_d3dRenderTargetView = nullptr; //color of rendered image
+// Depth/stencil view for use as a depth buffer.
+ID3D11DepthStencilView* g_d3dDepthStencilView = nullptr; //depth and such of rendered image
+// A texture to associate to the depth stencil view.
+ID3D11Texture2D* g_d3dDepthStencilBuffer = nullptr;  //2d texture object that will be used to store the depth values  - stops overdrawn objects 
+
+// Define the functionality of the depth/stencil stages.
+ID3D11DepthStencilState* g_d3dDepthStencilState = nullptr; //store depth and stencil state
+// Define the functionality of the rasterizer stage.
+ID3D11RasterizerState* g_d3dRasterizerState = nullptr; //variable will be used to store rasterizer state
+D3D11_VIEWPORT g_Viewport = { 0 }; //size of view port rectangle - multipul allows split screen multi-player
+
+
+///this stuff is specific to test program - help from 3dgep.com
+
+// Vertex buffer data
+ID3D11InputLayout* g_d3dInputLayout = nullptr; // order and type of data that vertex shader uses
+ID3D11Buffer* g_d3dVertexBuffer = nullptr; //store vertex data - color vertex
+ID3D11Buffer* g_d3dIndexBuffer = nullptr; // store index list - list of indices into the vertex buffer
+
+// Shader data
+ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info
+ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
+
+//buffer objects to hold/store data below
+///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
+
+/*
+
+constant buffer that stores the projection 
+matrix of the camera and 
+this shader variable only needs to be 
+updated when the camera’s 
+projection matrix is modified
+
+*/
+
+// Shader resources
+enum ConstantBuffer
+{
+    CB_Application,
+    CB_Frame,
+    CB_Object,
+    NumConstantBuffers
+};
+
+ID3D11Buffer* g_d3dConstantBuffers[NumConstantBuffers];
+
+//
+
+/*
+
+
+    Application: The application level constant buffer stores variables that rarely change. 
+    The contents of this constant buffer are being updated once during application startup 
+    and perhaps are not updated again. An example of an application level shader variable is 
+    the camera’s projection matrix. Usually the projection matrix is initialized once when the 
+    render window is created and only needs to be updated if the dimensions of the render window are changed 
+    (for example, if the window is resized).
+    
+    Frame: The frame level constant buffer stores variables that change each frame. An example of a frame level 
+    shader variable would be the camera’s view matrix which changes whenever the camera moves. This variable only 
+    needs to be updated once at the beginning of the render function and generally stays the same for all objects 
+    rendered that frame.
+    
+    Object: The object level constant buffer stores variables that are different for every object being rendered. 
+    An example of an object level shader variable is the object’s world matrix. Since each object in the scene 
+    will probably have a different world matrix this shader variable needs to be updated for every separate draw call.
+
+
+*/
+
+// 
+XMMATRIX g_WorldMatrix; //4x4 matrix to store cube of scene [later will not be cube]
+XMMATRIX g_ViewMatrix; //once per frame stores a new camrea view matrix that transforms obj
+XMMATRIX g_ProjectionMatrix; //store projection matrix of camrea; transform objects vertices
+//
+
+
+// Vertex data for cube.
+struct VertexPosColor
+{
+    XMFLOAT3 Position;
+    XMFLOAT3 Color;
+};
+
+VertexPosColor g_Vertices[8] = 
+{
+    { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0 - indices, first is position, second is color
+    { XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
+    { XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
+    { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
+    { XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
+    { XMFLOAT3(-1.0f,  1.0f,  1.0f), XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
+    { XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
+    { XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+};
+
+WORD g_Indicies[36] = //orginisation of indices to fomulate cube
+{
+    0, 1, 2, 0, 2, 3,
+    4, 6, 5, 4, 7, 6,
+    4, 5, 1, 4, 1, 0,
+    3, 2, 6, 3, 6, 7,
+    1, 5, 6, 1, 6, 2,
+    4, 0, 3, 4, 3, 7
+};
+//
+
+
+
+// Forward declarations.
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam); //handle mouse, keyboard, and window events that are sent to application window
+
+template< class ShaderClass >
+ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& profile); //template to load and compile shader
+
+bool LoadContent(); //load resources for geometry
+void UnloadContent(); //TODO: explain
+
+void Update(float deltaTime); //update logic
+void Render(); //render scene
+void Cleanup(); //clean dx resources
+//
+
+
+/**
+ * Initialize the application window.
+ */
+int InitApplication(HINSTANCE hInstance, int cmdShow)
+{
+    WNDCLASSEX wndClass = { 0 };
+    wndClass.cbSize = sizeof(WNDCLASSEX); //size in bytes of WNDCLASSX 
+    wndClass.style = CS_HREDRAW | CS_VREDRAW; //if moveing window, adjust width, then height (HRe is width, VRe is height)
+    wndClass.lpfnWndProc = &WndProc;//pointer to thing that handdles window event (WndProc is a var)
+    wndClass.hInstance = hInstance;// handle to thing that owns window class
+    //wndClass.hIcon = //class icon for top left icon thingy
+    wndClass.hCursor = LoadCursor(nullptr, IDC_ARROW);// custom cursor
+    wndClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);//class background brush to draw (can also be static color)
+    wndClass.lpszMenuName = nullptr;// ..nothing means that window has no default menu - else we can make a menu
+    wndClass.lpszClassName = CA2W(g_WindowClassName);//identify class name to make instance based off of
+
+    if (!RegisterClassEx(&wndClass)) //make window class
+    {
+        return -1;
+    }
+//
+
+
+    RECT windowRect = { 0, 0, g_WindowWidth, g_WindowHeight }; //client area 
+    AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE); //adjust client area for overlapped window style in https://docs.microsoft.com/en-ca/windows/win32/winmsg/window-styles?redirectedfrom=MSDN
+
+    g_WindowHandle = CreateWindowA(g_WindowClassName, //name of window to use as template - used to match registerClass
+        g_WindowName, //window name for display in title bar
+        WS_OVERLAPPEDWINDOW, //style of window - https://docs.microsoft.com/en-ca/windows/win32/winmsg/window-styles?redirectedfrom=MSDN
+        CW_USEDEFAULT,  // initial x pos (left to right)
+        CW_USEDEFAULT, // initial y pos (top to bottom)
+        windowRect.right - windowRect.left, //width of window
+        windowRect.bottom - windowRect.top, //height of window
+        nullptr, //parent window handle; could be fun to make a child window for a second window split screen rendering for game [heh]
+        nullptr, //window class template - menu
+        hInstance, //handle to instance associated with window
+        nullptr); // CREATESTRUCT structure - pointed to by the lParam param of the WM_CREATE message
+
+    if (!g_WindowHandle)
+    {
+        return -1;
+    }
+
+    ShowWindow(g_WindowHandle, cmdShow);
+    UpdateWindow(g_WindowHandle);
+
+    return 0;
+}
+
+
+LRESULT CALLBACK WindowProc(
+    _In_  HWND hwnd, //handle for window
+    _In_  UINT uMsg, // event message
+    _In_  WPARAM wParam, //some message stuff based on UMsg
+    _In_  LPARAM lParam // wParam, but not wide text
+);
+
+//
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    PAINTSTRUCT paintStruct;
+    HDC hDC;
+
+    switch (message)
+    {
+    case WM_PAINT: // erase the window’s background, so paint hwnd over
+    {
+        hDC = BeginPaint(hwnd, &paintStruct);
+        EndPaint(hwnd, &paintStruct);
+    }
+    break;
+    case WM_DESTROY: //..kill program message
+    {
+        PostQuitMessage(0);
+    }
+    break;
+    default:
+        return DefWindowProc(hwnd, message, wParam, lParam);
+    }
+
+    return 0;
+}
+
+
+
+//Run function which will continue to execute until the user decides to quit
+
+/**
+ * The main application loop.
+ */
+int Run()
+{
+    MSG msg = { 0 };
+
+    static DWORD previousTime = timeGetTime();
+    static const float targetFramerate = 30.0f;
+    static const float maxTimeStep = 1.0f / targetFramerate;
+
+    while (msg.message != WM_QUIT)
+    {
+        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) // retrieved message should remove window message from queue - return false if nothing
+        {
+            TranslateMessage(&msg); //translate mesage to character message
+            DispatchMessage(&msg); //dispatch message to appropriate window msg retrival feature -->  it will go to return func at end for returning to wParam which stores message
+        }
+        else //if no message
+        {//some time thing
+            DWORD currentTime = timeGetTime();
+            float deltaTime = (currentTime - previousTime) / 1000.0f;
+            previousTime = currentTime;
+
+            // Cap the delta time to the max time step (useful if your 
+            // debugging and you don't want the deltaTime value to explode.
+            deltaTime = std::min<float>(deltaTime, maxTimeStep);
+
+            //            Update( deltaTime );
+            //            Render();
+        }
+    }
+
+    return static_cast<int>(msg.wParam); //store message with wParam
+}
+//
+
+
+
+
+
+/*
+to do dx11:
+*/
+
+/*
+
+    Create the device and swap chain,
+
+    ^^ setup the swap chain description. The swap chain description 
+    defines the size and number of render buffers that will 
+    be used by the swap chain. It also associates the window 
+    to the swap chain which determines where the final 
+    image will be presented. The swap chain description 
+    also defines the quality of anti-aliasing
+    */
+
+    /**
+     * STEP 1: Initialize the DirectX device and swap chain.
+     */
+int InitDirectX(HINSTANCE hInstance, BOOL vSync)
+{
+    // A window handle must have been created already.
+    assert(g_WindowHandle != 0);
+
+    RECT clientRect;
+    GetClientRect(g_WindowHandle, &clientRect); //get size of window
+
+    // Compute the exact client dimensions. This will be used
+    // to initialize the render targets for our swap chain.
+    unsigned int clientWidth = clientRect.right - clientRect.left; //exact size of window width, by getting start and end pos of window position
+    unsigned int clientHeight = clientRect.bottom - clientRect.top; //exact size of window height, by getting start and end pos of window position
+
+    DXGI_SWAP_CHAIN_DESC swapChainDesc; //define swapchain
+    ZeroMemory(&swapChainDesc, sizeof(DXGI_SWAP_CHAIN_DESC)); //allocate swapchain memory size
+
+    swapChainDesc.BufferCount = 1; //buffer count in swap chain - 2 images could be a good idea to render 2 seperate windows and states for unique split screen :P
+    swapChainDesc.BufferDesc.Width = clientWidth; //width of window
+    swapChainDesc.BufferDesc.Height = clientHeight; //height of window
+    swapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; //buffer format of R G B A
+    
+    //define exact refresh rate to be static
+    DXGI_RATIONAL refreshRateStatic; // 0/1 means unlimited, no vsync/fps lock -- I made it 30 for my laptop battery when coding on the go --> for testing on my mx250 over rx480 [battery] as well
+    refreshRateStatic.Numerator = 30;
+    refreshRateStatic.Denominator = 1;
+    //
+    
+    swapChainDesc.BufferDesc.RefreshRate = refreshRateStatic; //refresh rate
+
+    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; //cpu access optio nfor back buffer:
+    /*
+    
+    DXGI_USAGE_BACK_BUFFER: its a back buffer...
+
+    DXGI_USAGE_READ_ONLY: use surface or resource for only read
+
+    DXGI_USAGE_RENDER_TARGET_OUTPUT: use surface or resource as an output render target
+    
+    DXGI_USAGE_SHADER_INPUT: surface or resource as an input
+
+    DXGI_USAGE_SHARED: share surface or resource
+
+    DXGI_USAGE_UNORDERED_ACCESS: surface or resource for unordered access
+    */
+
+
+    swapChainDesc.OutputWindow = g_WindowHandle; //window to output swap chain to 
+    swapChainDesc.SampleDesc.Count = 1;
+    swapChainDesc.SampleDesc.Quality = 0;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD; // how to handle presentation buffer after on surface
+    //DXGI_SWAP_EFFECT_SEQUENTIAL --> most efficent presentation; discard displayed buffer after IDXGISwapChain::Present is called
+    //DXGI_SWAP_EFFECT_DISCARD --> present content of swap chain in order - keep buffer after ::Present is called
+
+    swapChainDesc.Windowed = TRUE;
+    
+    //swapChainDesc.Flags; //https://docs.microsoft.com/en-ca/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_chain_flag?redirectedfrom=MSDN <-- diffrent flags
+    UINT createDeviceFlags = 0;
+    //D3D11_CREATE_DEVICE_DEBUG is a debug layer to add extra checks
+#if _DEBUG
+    createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG; 
+#endif
+
+    // These are the feature levels that we will accept.
+    D3D_FEATURE_LEVEL featureLevels[] = 
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1
+    };
+
+    // This will be the feature level that 
+    // is used to create our device and swap chain.
+    D3D_FEATURE_LEVEL featureLevel;
+
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(  //create swap chain --> 
+        nullptr, //A pointer to the video adapter to use --> nothing means default for program launch is used
+        D3D_DRIVER_TYPE_HARDWARE, //direct 3d driver type: unknown [dunno], hardware [features in hardware], refrence [accuracy over speed], zero render ability driver, software [software driver - very slow], warp driver [9_1-10_1 support of high prof implment]
+        nullptr, //dll for software rasterizer if software driver is used
+        createDeviceFlags,  //device flags
+        featureLevels, //feature level to try to acsess in order
+        _countof(featureLevels), //number of elements
+        D3D11_SDK_VERSION, //sdk version
+        &swapChainDesc, //swap chain descriptor
+        &g_d3dSwapChain, //pointer to swap chain obj used for rendering
+        &g_d3dDevice, //adress to GPU device 
+        &featureLevel, //return first supported feature in featureLevel array
+        &g_d3dDeviceContext); //dunno
+    //
+    if (hr == E_INVALIDARG) //if making swap chain fails, try again with a diffrent feature level
+    {
+        hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE,
+            nullptr, createDeviceFlags, &featureLevels[1], _countof(featureLevels) - 1,
+            D3D11_SDK_VERSION, &swapChainDesc, &g_d3dSwapChain, &g_d3dDevice, &featureLevel,
+            &g_d3dDeviceContext);
+    }
+
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    //////////////////////////////////////////
+    // Next initialize the back buffer of the swap chain and associate it to a 
+    // render target view.
+
+    //STEP 2:  Create a render target view of the swap chain’s back buffer,
+
+    ID3D11Texture2D* backBuffer;
+    hr = g_d3dSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer); //get pointer to the only buffer of swapchain (I currently made 1)
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    hr = g_d3dDevice->CreateRenderTargetView( //make render view from buffer
+        backBuffer, //buffer input
+        nullptr,  //render target view description
+        &g_d3dRenderTargetView); //pointer to target view port to send info to [need 2 seperate ones dealing with 2 seperate back buffers to render 2 viewports
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    SafeRelease(backBuffer);
+
+
+    //STEP 3: Create a Depth-Stencil Buffer
+
+    // Create the depth buffer for use with the depth/stencil view.
+    D3D11_TEXTURE2D_DESC depthStencilBufferDesc; //depth stencil buffer obj
+    ZeroMemory(&depthStencilBufferDesc, sizeof(D3D11_TEXTURE2D_DESC)); //max texture memory size is allocated to buffer
+
+    depthStencilBufferDesc.ArraySize = 1; //array of textures length (if array)
+    depthStencilBufferDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL; //bind flags are vairous
+    depthStencilBufferDesc.CPUAccessFlags = 0; // No CPU access required. 
+    depthStencilBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; //texture format
+    depthStencilBufferDesc.Width = clientWidth; //resolution of texture in texels width
+    depthStencilBufferDesc.Height = clientHeight; //resolution of texture in texels height
+    depthStencilBufferDesc.MipLevels = 1; //1 means multisampled
+    
+    ////multisampling parameters
+    depthStencilBufferDesc.SampleDesc.Count = 1; 
+    depthStencilBufferDesc.SampleDesc.Quality = 0;
+    ////
+
+    depthStencilBufferDesc.Usage = D3D11_USAGE_DEFAULT; //how to read texture 
+    /*
+    D3D11_USAGE_DEFAULT:  read and write buffer with the gpu
+
+    D3D11_USAGE_IMMUTABLE: read by gpu, and initialized when created
+
+    D3D11_USAGE_DYNAMIC: GPU read, and cpu write - if updated every frame by cpu, it is good
+
+    D3D11_USAGE_STAGING: resource that can be copied from cpu to gpu
+    
+    */
+
+    //Step 4: Create a texture for the depth-stencil buffer,
+
+    hr = g_d3dDevice->CreateTexture2D( //make 2d texture
+        &depthStencilBufferDesc,  //pointer to 2d texture resource
+        nullptr,  // sub data for 2d
+        &g_d3dDepthStencilBuffer);  // output to stencil vuffer
+    
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    //Step 5: Create a depth-stencil view from the depth-stencil buffer,
+    
+    hr = g_d3dDevice->CreateDepthStencilView( //create depth stencil buffer view
+        g_d3dDepthStencilBuffer,  // input depth stencil buffer
+        nullptr, //input sub buffer - Pointer to a depth-stencil-view description --> 0 means mipmap 0 is used
+        &g_d3dDepthStencilView); // output to depth stencil view
+
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    //Step 6: Create a depth-stencil state object that defines the behaviour of the output merger stage
+
+    // Setup depth/stencil state.
+    D3D11_DEPTH_STENCIL_DESC depthStencilStateDesc;
+    ZeroMemory(&depthStencilStateDesc, sizeof(D3D11_DEPTH_STENCIL_DESC));
+
+    depthStencilStateDesc.DepthEnable = TRUE; // enable depth testing
+    depthStencilStateDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL; //choose to modify or not depth mask
+    /*
+    D3D11_DEPTH_WRITE_MASK_ALL: Turn on writes to the depth-stencil buffer.
+
+    D3D11_DEPTH_WRITE_MASK_ZERO: Turn off writes to the depth-stencil buffer.
+    */
+
+    depthStencilStateDesc.DepthFunc = D3D11_COMPARISON_LESS; //depth data compairison or not -->  if the source data is less than the destination data (that is, the source data is closer to the eye), then the depth comparison passes --> render stuff
+    depthStencilStateDesc.StencilEnable = FALSE; //stencil testing or not
+    /*
+    
+    UINT8 StencilReadMask: Identify a portion of the depth-stencil buffer for reading stencil data.
+    
+    UINT8 StencilWriteMask: Identify a portion of the depth-stencil buffer for writing stencil data.
+    
+    D3D11_DEPTH_STENCILOP_DESC FrontFace: Identify how to use the results of the depth test and the stencil test for pixels whose surface normal is facing towards the camera (see D3D11_DEPTH_STENCILOP_DESC).
+    
+    D3D11_DEPTH_STENCILOP_DESC BackFace: Identify how to use the results of the depth test and the stencil test for pixels whose surface normal is facing away from the camera (see D3D11_DEPTH_STENCILOP_DESC).
+    
+    */
+
+
+    hr = g_d3dDevice->CreateDepthStencilState( //make depth stencil state
+        &depthStencilStateDesc, //descriptor of depth stencil
+        &g_d3dDepthStencilState); //depth stencil state view to be outputed too
+
+    //
+
+    //Step 7:  Create a rasterizer state object that defines the behaviour of the rasterizer stage.
+
+    // Setup rasterizer state.
+    D3D11_RASTERIZER_DESC rasterizerDesc;
+    ZeroMemory(&rasterizerDesc, sizeof(D3D11_RASTERIZER_DESC));
+
+    rasterizerDesc.AntialiasedLineEnable = FALSE; //if MSAA is off: true turns on AA
+    rasterizerDesc.CullMode = D3D11_CULL_BACK;
+    /*
+    D3D11_CULL_NONE: Always draw all triangles.
+    D3D11_CULL_FRONT : Do not draw triangles that are front - facing.
+    D3D11_CULL_BACK : Do not draw triangles that are back - facing.
+    */
+
+    rasterizerDesc.DepthBias = 0; //added value to depth - as simulated depth
+    rasterizerDesc.DepthBiasClamp = 0.0f; //max for depth
+    rasterizerDesc.DepthClipEnable = TRUE; //clip based on distance of obj 
+    rasterizerDesc.FillMode = D3D11_FILL_SOLID; 
+    /*
+    
+    D3D11_FILL_WIREFRAME: Draw lines connecting the vertices.
+    D3D11_FILL_SOLID: Fill the triangles formed by the vertices.
+
+    */
+
+
+    rasterizerDesc.FrontCounterClockwise = FALSE; //if true, a triangle will be considered front if counter clock wise,  else opposite for false
+    rasterizerDesc.MultisampleEnable = FALSE; //MSAA or not
+    rasterizerDesc.ScissorEnable = FALSE; //cut renderview or not
+    rasterizerDesc.SlopeScaledDepthBias = 0.0f;//scalar on given pixel slope?
+
+    // Create the rasterizer state object.
+    hr = g_d3dDevice->CreateRasterizerState( //make rasterizer state
+        &rasterizerDesc,  //rasterizer descriptor
+        &g_d3dRasterizerState); //rasterizer state output
+
+    if (FAILED(hr))
+    {
+        return -1;
+    }
+
+    //Step 8: Initialize the Viewport
+
+        // Initialize the viewport to occupy the entire client area
+    g_Viewport.Width = static_cast<float>(clientWidth); 
+    g_Viewport.Height = static_cast<float>(clientHeight);
+    g_Viewport.TopLeftX = 0.0f;
+    g_Viewport.TopLeftY = 0.0f;
+    g_Viewport.MinDepth = 0.0f;
+    g_Viewport.MaxDepth = 1.0f;
+
+    return 0;
+}
+
+/*
+
+The vertex shader is responsible for transforming the incoming vertex position into clip-space 
+as required by the rasterizer stage 
+
+pixel shader is responsible for computing the final 
+pixel color from the interpolated vertex attributes
+
+*/
+
+/*   -- https://www.3dgep.com/introduction-to-directx-11/#Introduction -- 
+BASIC IDEA ON HOW SHADERS WORK:
+
+the vertex shader might declare an output variable called out_color 
+of type float4 which is associated to the COLOR semantic and the pixel 
+shader declares an input variable called in_color of type float4 which 
+is also associated to the COLOR semantic. This will cause the value of 
+the out_color variable declared in the vertex shader to be connected to 
+the value of the in_color variable in the pixel shader.
+
+
+vertex shader says: [float4 out_color : COLOR] --> [float4 in_color : COLOR]
+*/
+
+
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine, int cmdShow)
+{
+    UNREFERENCED_PARAMETER(prevInstance);
+    UNREFERENCED_PARAMETER(cmdLine);
+
+    // Check for DirectX Math library support.
+    if (!XMVerifyCPUSupport()) //crash if no DirectXMath support
+    {
+        MessageBox(nullptr, TEXT("Failed to verify DirectX Math library support."), TEXT("Error"), MB_OK);
+        return -1;
+    }
+
+    if (InitApplication(hInstance, cmdShow) != 0) //make main window, else crash
+    {
+        MessageBox(nullptr, TEXT("Failed to create applicaiton window."), TEXT("Error"), MB_OK);
+        return -1;
+    }
+
+    if (InitDirectX(hInstance, g_EnableVSync) != 0)
+    {
+        MessageBox(nullptr, TEXT("Failed to create DirectX device and swap chain."), TEXT("Error"), MB_OK);
+        return -1;
+    }
+
+    int returnCode = Run(); //start off main loop
+
+    return returnCode;
+}
+
+/*
+
+To load the shader at runtime, we will define a template function called LoadShader to load a shader from a file path
+
+*/
+
+// Get the latest profile for the specified shader type.
+template< class ShaderClass >
+std::string GetLatestProfile(); //template to get shader settings
+
+template<>
+std::string GetLatestProfile<ID3D11VertexShader>()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //get usable shader feature level
+
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "vs_5_0"; //11.1 and 11.0 are 5.0
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "vs_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "vs_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3:
+    {
+        return "vs_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "vs_4_0_level_9_1";
+    }
+    break;
+    } // switch( featureLevel )
+
+    return "";
+}
+////////////////////
+template<>
+std::string GetLatestProfile<ID3D11PixelShader>()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //feature level to compile pixel shader 
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "ps_5_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "ps_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "ps_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3:
+    {
+        return "ps_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "ps_4_0_level_9_1";
+    }
+    break;
+    }
+    return "";
+}
+
+// --I can make special options for other shader types
+
+/*
+make shader object - LoadShader time:
+*/
+
+template< class ShaderClass >
+ShaderClass* CreateShader(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage); //generic shader creation, take in parameters [need to specify what later]
+
+template<>
+ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage) //vertex shader shader type
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11VertexShader* pVertexShader = nullptr;
+    g_d3dDevice->CreateVertexShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pVertexShader); //make a shader based on buffer, buffer size, classtype, and return to pshader object
+
+    return pVertexShader;
+}
+
+////////////////////////////////
+
+template<>
+ID3D11PixelShader* CreateShader<ID3D11PixelShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11PixelShader* pPixelShader = nullptr;
+    g_d3dDevice->CreatePixelShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pPixelShader); //pixel shader version of the vertex shader above
+
+    return pPixelShader;
+}
+
+
+template< class ShaderClass >
+ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& _profile) //LoadShader class
+{
+    ID3DBlob* pShaderBlob = nullptr; 
+    ID3DBlob* pErrorBlob = nullptr;
+    ShaderClass* pShader = nullptr;
+
+    std::string profile = _profile;
+    if (profile == "latest")
+    {
+        profile = GetLatestProfile<ShaderClass>(); //get able shader profiles/settings
+    }
+    
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+
+#if _DEBUG
+    flags |= D3DCOMPILE_DEBUG;
+#endif
+
+    HRESULT hr = D3DCompileFromFile( //HLSL shader into a Binary Large Object (BLOB)  --> D3DCompileFromFile does this
+        fileName.c_str(),  //shader path name
+        nullptr, //array of shader macro's [try async compile later] - https://docs.microsoft.com/en-ca/windows/win32/api/d3dcommon/ns-d3dcommon-d3d_shader_macro?redirectedfrom=MSDN  --> stuff like async creation exists
+        D3D_COMPILE_STANDARD_FILE_INCLUDE,  //read file realtive to current directory
+        entryPoint.c_str(), //name of shader for execution point
+        profile.c_str(),// set of shader features to compile against --> converted to c_str() because winAPI... 
+        flags, //compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-constants?redirectedfrom=MSDN  - like always use | to add more
+        0, //effect compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-effect-constants?redirectedfrom=MSDN 
+        &pShaderBlob,// pointer to output shader Blob - compiled stuff
+        &pErrorBlob);// error to Blob 
+
+    if (FAILED(hr)) 
+    {
+        if (pErrorBlob) // if no blob, we free all data related to this
+        {
+            std::string errorMessage = (char*)pErrorBlob->GetBufferPointer(); //error message of when making shaderblob
+            OutputDebugStringA(errorMessage.c_str()); //print string to visaul studio debug log - no need for a console
+
+            SafeRelease(pShaderBlob); //clear mem of shader
+            SafeRelease(pErrorBlob); //clear mem of error shader
+        }
+
+        return false;
+    }
+
+    pShader = CreateShader<ShaderClass>(pShaderBlob, nullptr); // if no crash I can make a shader using shader blob 
+
+    SafeRelease(pShaderBlob); // no longer need shader mem
+    SafeRelease(pErrorBlob); // no longer need shader mem
+
+    return pShader;
+}

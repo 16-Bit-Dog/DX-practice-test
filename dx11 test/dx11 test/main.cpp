@@ -1,10 +1,21 @@
 #include "DirectXTemplatePCH.h"
 #include <filesystem>
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+#include <unordered_map>
+#include <algorithm>    // std::find
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
-const LONG g_WindowWidth = 1280; 
-const LONG g_WindowHeight = 720;
+struct VertexPosColor
+{
+    XMFLOAT3 Position;
+    XMFLOAT3 Color;
+    XMFLOAT2 Tex;
+};
+
+const LONG g_WindowWidth = 360;
+const LONG g_WindowHeight = 360;
 LPCSTR g_WindowClassName = ("DirectXWindowClass"); //window name
 LPCSTR g_WindowName = "DirectX Template"; //
 HWND g_WindowHandle = 0; //instance of window
@@ -49,7 +60,7 @@ ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
 constant buffer that stores the projection 
 matrix of the camera and 
 this shader variable only needs to be 
-updated when the camera’s 
+updated when the cameraâ€™s 
 projection matrix is modified
 
 */
@@ -73,17 +84,17 @@ ID3D11Buffer* g_d3dConstantBuffers[NumConstantBuffers];
     Application: The application level constant buffer stores variables that rarely change. 
     The contents of this constant buffer are being updated once during application startup 
     and perhaps are not updated again. An example of an application level shader variable is 
-    the camera’s projection matrix. Usually the projection matrix is initialized once when the 
+    the cameraâ€™s projection matrix. Usually the projection matrix is initialized once when the 
     render window is created and only needs to be updated if the dimensions of the render window are changed 
     (for example, if the window is resized).
     
     Frame: The frame level constant buffer stores variables that change each frame. An example of a frame level 
-    shader variable would be the camera’s view matrix which changes whenever the camera moves. This variable only 
+    shader variable would be the cameraâ€™s view matrix which changes whenever the camera moves. This variable only 
     needs to be updated once at the beginning of the render function and generally stays the same for all objects 
     rendered that frame.
     
     Object: The object level constant buffer stores variables that are different for every object being rendered. 
-    An example of an object level shader variable is the object’s world matrix. Since each object in the scene 
+    An example of an object level shader variable is the objectâ€™s world matrix. Since each object in the scene 
     will probably have a different world matrix this shader variable needs to be updated for every separate draw call.
 
 
@@ -97,13 +108,12 @@ XMMATRIX g_ProjectionMatrix; //store projection matrix of camrea; transform obje
 
 
 // Vertex data for cube.
-struct VertexPosColor
-{
-    XMFLOAT3 Position;
-    XMFLOAT3 Color;
-};
 
-VertexPosColor g_Vertices[8] = 
+
+//std::vector<VertexPosColor> g_Vertices;
+
+
+std::vector<VertexPosColor> g_Vertices; /*=
 {
     { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0 - indices, first is position, second is color
     { XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
@@ -114,8 +124,13 @@ VertexPosColor g_Vertices[8] =
     { XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
     { XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
 };
+*/
 
-WORD g_Indicies[36] = //orginisation of indices to fomulate cube
+//std::vector<UINT> g_Indicies; //texCoord
+
+std::vector<XMFLOAT2> g_Normal; //texCoord
+
+std::vector<UINT> g_Indicies; /*= //orginisation of indices to fomulate cube
 {
     0, 1, 2, 0, 2, 3,
     4, 6, 5, 4, 7, 6,
@@ -123,7 +138,7 @@ WORD g_Indicies[36] = //orginisation of indices to fomulate cube
     3, 2, 6, 3, 6, 7,
     1, 5, 6, 1, 6, 2,
     4, 0, 3, 4, 3, 7
-};
+};*/
 //
 
 
@@ -209,7 +224,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message)
     {
-    case WM_PAINT: // erase the window’s background, so paint hwnd over
+    case WM_PAINT: // erase the windowâ€™s background, so paint hwnd over
     {
         hDC = BeginPaint(hwnd, &paintStruct);
         EndPaint(hwnd, &paintStruct);
@@ -400,7 +415,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     // Next initialize the back buffer of the swap chain and associate it to a 
     // render target view.
 
-    //STEP 2:  Create a render target view of the swap chain’s back buffer,
+    //STEP 2:  Create a render target view of the swap chainâ€™s back buffer,
 
     ID3D11Texture2D* backBuffer;
     hr = g_d3dSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer); //get pointer to the only buffer of swapchain (I currently made 1)
@@ -792,9 +807,87 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 
 /////////////////////////////////////////
 
+void loadModel(std::string path) {
+    //g_Vertices
+    //VertexPosColor
+
+    tinyobj::attrib_t attrib;// clear these values each read by reinitializing because I don't know if free and such works/how they work for these - rather do this for now since dead memory is a non-issue if it happens to exist 
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+
+    //XMFLOAT2 tmpa;
+    VertexPosColor tmpV;
+    
+    XMFLOAT3 normals;
+    int i = 0;
+
+    std::map<std::tuple<float,float,float>,int> b;
+    
+    for (const auto& shape : shapes) { // combine all faces into 1 model --> they are normally "seperate"
+        i = 0;
+        for (const auto& index : shape.mesh.indices) { //iterate through each indice in mesh
+
+            
+            tmpV.Position = {
+                attrib.vertices[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.vertices[3 * index.vertex_index + 1] ,
+                attrib.vertices[3 * index.vertex_index + 2] // move obj pos
+            };
+
+            tmpV.Tex = { // flip image vertically to fix model texture
+                attrib.texcoords[2 * index.texcoord_index + 0], // this vector does not work if I do not set texcoods when making the obj
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            tmpV.Color = { 
+
+                attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.colors[3 * index.vertex_index + 1] ,
+                attrib.colors[3 * index.vertex_index + 2] // move color pos
+            
+            };
+
+
+                // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
+                //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
+                
+                //g_Vertices.push_back(tmpV);
+                //g_TexC.push_back(tmpT);
+            
+//any equal vertex pos must be turned into same indice
+                //count = std::count(a.begin(), a.end(), tmpV.Position);
+
+            
+
+            if (b.count((std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z))) == 0) { //filter out duplicate verticies
+                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices.size();    
+                g_Vertices.push_back(tmpV);
+                    //i++;
+            }
+            g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
+
+            //g_Vertices.push_back(tmpV);
+            
+                //g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]); //push back point i associated with count -
+       //     tempIndice.push_back(uniqueVertices[vertex]); //add to unique vertex unordered map
+        }
+
+    }
+
+    // g_Indicies
+}
+
 bool LoadContent()
 {
     assert(g_d3dDevice);
+
+    loadModel("./model/1.obj");
 
     // Create an initialize the vertex buffer.
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
@@ -819,7 +912,8 @@ bool LoadContent()
     
     */
 
-    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * _countof(g_Vertices); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices.size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
     vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
 
     /*
@@ -868,7 +962,8 @@ bool LoadContent()
 
     */
 
-    resourceData.pSysMem = g_Vertices; //Vertex data for sub source
+    //const VertexPosColor* tmpV = ;
+    resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
 
     HRESULT hr = g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
     if (FAILED(hr))
@@ -878,15 +973,18 @@ bool LoadContent()
 
     //////////////////////////////
 
+    
     // Create and initialize the index buffer.
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
     indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
-    indexBufferDesc.ByteWidth = sizeof(WORD) * _countof(g_Indicies);
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-    resourceData.pSysMem = g_Indicies; //indice data for sub source
+
+    
+    resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
 
     hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
     if (FAILED(hr))
@@ -1137,7 +1235,7 @@ void Render()
 
     g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
         0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
-        1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
+        1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT â€“ StartSlot is vertex buffer count
         /*
         StartSlot argument should match the InputSlot of the 
         D3D11_INPUT_ELEMENT_DESC elements that were configured 
@@ -1161,7 +1259,7 @@ void Render()
     
 
     g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // set to use as primitive topology tri list
+        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 
 
     /////////Setup the Vertex Shader Stage
@@ -1172,7 +1270,7 @@ void Render()
         0); //num of class instance above
 
     g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
-        0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
+        0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT â€“ 1
         3, //number of buffers - obejct, frame, and application buffers
         g_d3dConstantBuffers); //arra of const buffer is given to device
 
@@ -1210,11 +1308,19 @@ void Render()
     g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
 
     ////////////Draw The Cube
-
+    
     g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
-        _countof(g_Indicies), //indice count
+        (g_Indicies.size()*2), //indice count - yes, this was an issue that needed *2...  
         0,  //start index location
         0); //base vertex location
+    
+    /*
+    g_d3dDeviceContext->Draw( //draw indice+vertex
+        g_Vertices.size(), //indice count
+        g_Vertices[0].Position); //base vertex location
+    */
+    //  UINT VertexCount,
+    //UINT StartVertexLocation
 
     ///////////Present
 

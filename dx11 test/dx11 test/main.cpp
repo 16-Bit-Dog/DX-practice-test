@@ -4,6 +4,7 @@
 #include "tiny_obj_loader.h"
 #include <unordered_map>
 #include <algorithm>    // std::find
+#include <string>
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
@@ -13,6 +14,8 @@ struct VertexPosColor
     XMFLOAT3 Color;
     XMFLOAT2 Tex;
 };
+
+SHORT a = 0;
 
 const LONG g_WindowWidth = 360;
 const LONG g_WindowHeight = 360;
@@ -44,12 +47,17 @@ D3D11_VIEWPORT g_Viewport = { 0 }; //size of view port rectangle - multipul allo
 ///this stuff is specific to test program - help from 3dgep.com
 
 // Vertex buffer data
-ID3D11InputLayout* g_d3dInputLayout = nullptr; // order and type of data that vertex shader uses
-ID3D11Buffer* g_d3dVertexBuffer = nullptr; //store vertex data - color vertex
-ID3D11Buffer* g_d3dIndexBuffer = nullptr; // store index list - list of indices into the vertex buffer
+ID3D11InputLayout* g_d3dInputLayout; // order and type of data that vertex shader uses
+
+ID3D11Buffer* g_d3dVertexBuffer;
+std::vector<ID3D11Buffer*> g_d3dVertexBufferV; //store vertex data - color vertex
+
+
+ID3D11Buffer* g_d3dIndexBuffer; // store index list - list of indices into the vertex buffer
+std::vector<ID3D11Buffer*> g_d3dIndexBufferV;
 
 // Shader data
-ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info
+ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info - I am very lazy for offsets, so I'll us
 ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
 
 //buffer objects to hold/store data below
@@ -142,6 +150,83 @@ std::vector<UINT> g_Indicies; /*= //orginisation of indices to fomulate cube
 //
 
 
+/////////////////////////////////////////
+
+void loadModel(std::string path) {
+    //g_Vertices
+    //VertexPosColor
+
+    tinyobj::attrib_t attrib;// clear these values each read by reinitializing because I don't know if free and such works/how they work for these - rather do this for now since dead memory is a non-issue if it happens to exist 
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+
+    //XMFLOAT2 tmpa;
+    VertexPosColor tmpV;
+
+    XMFLOAT3 normals;
+    int i = 0;
+
+    std::map<std::tuple<float, float, float>, int> b;
+
+    for (const auto& shape : shapes) { // combine all faces into 1 model --> they are normally "seperate"
+        i = 0;
+        for (const auto& index : shape.mesh.indices) { //iterate through each indice in mesh
+
+
+            tmpV.Position = {
+                attrib.vertices[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.vertices[3 * index.vertex_index + 1] ,
+                attrib.vertices[3 * index.vertex_index + 2] // move obj pos
+            };
+
+            tmpV.Tex = { // flip image vertically to fix model texture
+                attrib.texcoords[2 * index.texcoord_index + 0], // this vector does not work if I do not set texcoods when making the obj
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            tmpV.Color = {
+
+                attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.colors[3 * index.vertex_index + 1] ,
+                attrib.colors[3 * index.vertex_index + 2] // move color pos
+
+            };
+
+
+            // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
+            //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
+
+            //g_Vertices.push_back(tmpV);
+            //g_TexC.push_back(tmpT);
+
+//any equal vertex pos must be turned into same indice
+                //count = std::count(a.begin(), a.end(), tmpV.Position);
+
+
+
+            if (b.count((std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z))) == 0) { //filter out duplicate verticies
+                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices.size();
+                g_Vertices.push_back(tmpV);
+                //i++;
+            }
+            g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
+
+            //g_Vertices.push_back(tmpV);
+
+                //g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]); //push back point i associated with count -
+       //     tempIndice.push_back(uniqueVertices[vertex]); //add to unique vertex unordered map
+        }
+
+    }
+
+    // g_Indicies
+}
 
 // Forward declarations.
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam); //handle mouse, keyboard, and window events that are sent to application window
@@ -249,6 +334,52 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 /**
  * The main application loop.
  */
+
+void dupModelA() { //dup last gotten model
+
+    //I am being very verbose here non purpose, rather than reusing a function I want control
+
+    loadModel("./model/2.obj");
+
+
+    D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
+    ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
+
+    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
+
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices.size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
+
+    vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+    D3D11_SUBRESOURCE_DATA resourceData; //data for buffer
+    ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
+    resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
+
+    g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
+    
+    g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
+
+
+    D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
+    ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
+
+    indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
+    indexBufferDesc.CPUAccessFlags = 0;
+    indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+
+    resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
+
+    g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
+
+    g_d3dIndexBufferV.push_back(g_d3dIndexBuffer);
+
+
+
+    OutputDebugStringA("\n");
+}
+
 int Run()
 {
     MSG msg = { 0 };
@@ -256,7 +387,8 @@ int Run()
     static DWORD previousTime = timeGetTime();
     static const float targetFramerate = 30.0f;
     static const float maxTimeStep = 1.0f / targetFramerate;
-
+    
+    //OutputDebugStringA("a");
     while (msg.message != WM_QUIT)
     {
         if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) // retrieved message should remove window message from queue - return false if nothing
@@ -273,6 +405,19 @@ int Run()
             // Cap the delta time to the max time step (useful if your 
             // debugging and you don't want the deltaTime value to explode.
             deltaTime = std::min<float>(deltaTime, maxTimeStep);
+
+            auto keyA = GetKeyState(0x4D);
+//            switch (GetMessage(&msg, g_WindowHandle,WM_KEYFIRST,WM_KEYLAST)) {
+
+  //              OutputDebugStringA("yeet\n");
+
+                if (keyA) {
+
+                    dupModelA();
+
+                }
+
+//            }
 
             Update(deltaTime);
             Render();
@@ -717,8 +862,8 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
 
     D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] =
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Position), D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
+        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
 
     auto hr = g_d3dDevice->CreateInputLayout( //make input layout - global change to input Layout
@@ -805,86 +950,10 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
     return pShader;
 }
 
-/////////////////////////////////////////
-
-void loadModel(std::string path) {
-    //g_Vertices
-    //VertexPosColor
-
-    tinyobj::attrib_t attrib;// clear these values each read by reinitializing because I don't know if free and such works/how they work for these - rather do this for now since dead memory is a non-issue if it happens to exist 
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
-        throw std::runtime_error(warn + err);
-    }
-
-
-    //XMFLOAT2 tmpa;
-    VertexPosColor tmpV;
-    
-    XMFLOAT3 normals;
-    int i = 0;
-
-    std::map<std::tuple<float,float,float>,int> b;
-    
-    for (const auto& shape : shapes) { // combine all faces into 1 model --> they are normally "seperate"
-        i = 0;
-        for (const auto& index : shape.mesh.indices) { //iterate through each indice in mesh
-
-            
-            tmpV.Position = {
-                attrib.vertices[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
-                attrib.vertices[3 * index.vertex_index + 1] ,
-                attrib.vertices[3 * index.vertex_index + 2] // move obj pos
-            };
-
-            tmpV.Tex = { // flip image vertically to fix model texture
-                attrib.texcoords[2 * index.texcoord_index + 0], // this vector does not work if I do not set texcoods when making the obj
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-            };
-
-            tmpV.Color = { 
-
-                attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
-                attrib.colors[3 * index.vertex_index + 1] ,
-                attrib.colors[3 * index.vertex_index + 2] // move color pos
-            
-            };
-
-
-                // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
-                //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
-                
-                //g_Vertices.push_back(tmpV);
-                //g_TexC.push_back(tmpT);
-            
-//any equal vertex pos must be turned into same indice
-                //count = std::count(a.begin(), a.end(), tmpV.Position);
-
-            
-
-            if (b.count((std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z))) == 0) { //filter out duplicate verticies
-                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices.size();    
-                g_Vertices.push_back(tmpV);
-                    //i++;
-            }
-            g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
-
-            //g_Vertices.push_back(tmpV);
-            
-                //g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]); //push back point i associated with count -
-       //     tempIndice.push_back(uniqueVertices[vertex]); //add to unique vertex unordered map
-        }
-
-    }
-
-    // g_Indicies
-}
 
 bool LoadContent()
 {
+    
     assert(g_d3dDevice);
 
     loadModel("./model/1.obj");
@@ -895,7 +964,7 @@ bool LoadContent()
 
     //vertexBufferDesc.StructureByteStride --- if you have a struct buffer --> done to be efficent with zero memory allocation, but this allows allocation by stride
 
-    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER; //how to bind buffer
+    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
     /* type of buffer:
     
@@ -961,7 +1030,7 @@ bool LoadContent()
     UINT SysMemSlicePitch: The distance (in bytes) from the beginning of one depth level to the next. System-memory-slice pitch is only used for 3D texture data as it has no meaning for the other resource types.
 
     */
-
+    
     //const VertexPosColor* tmpV = ;
     resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
 
@@ -971,6 +1040,7 @@ bool LoadContent()
         return false;
     }
 
+    g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
     //////////////////////////////
 
     
@@ -992,6 +1062,7 @@ bool LoadContent()
         return false;
     }
     
+    g_d3dIndexBufferV.push_back(g_d3dIndexBuffer);
     //////////////////////
 
     // Create the constant buffers for the variables defined in the vertex shader.
@@ -1177,6 +1248,9 @@ bool LoadContent()
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
+
+
+    
     XMVECTOR eyePosition = XMVectorSet(0, 0, -10, 1); //eye pos
     XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1); // cam focus
     XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0); //dir up
@@ -1233,30 +1307,35 @@ void Render()
     const UINT vertexStride = sizeof(VertexPosColor); //
     const UINT offset = 0; //
 
-    g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
-        0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
-        1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
-        /*
-        StartSlot argument should match the InputSlot of the 
-        D3D11_INPUT_ELEMENT_DESC elements that were configured 
-        in the LoadContent function.
-        */
+    for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
+            0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
+            1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
+
+            //StartSlot argument should match the InputSlot of the 
+            //D3D11_INPUT_ELEMENT_DESC elements that were configured 
+            //in the LoadContent function.
 
 
-        &g_d3dVertexBuffer, //pointer to array of vertex buffers [may not be array too]
-        &vertexStride,  //ponter to array of stride values for each buffer
-        &offset); //offset for each buffer in vertex buffer array
 
+            &g_d3dVertexBufferV[i], //pointer to array of vertex buffers [may not be array too]
+            &vertexStride,  //ponter to array of stride values for each buffer
+            &offset); //offset for each buffer in vertex buffer array
+    }
+
+    //g_d3dDeviceContext -> Map(g_d3dVertexBuffer,0, D3D11_MAP_WRITE, 0, &VMmap); //for now map to kill all later - will need to revamp this to make it additive later
+
+    //g_d3dDeviceContext->Unmap(g_d3dVertexBuffer, 0);
 
     g_d3dDeviceContext->IASetInputLayout(
         g_d3dInputLayout);  //set input layout
     
-
-    g_d3dDeviceContext->IASetIndexBuffer(
-        g_d3dIndexBuffer, //index buffer array pointer
-        DXGI_FORMAT_R16_UINT, //format of DXGI format
-        0); //offset
-    
+    for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        g_d3dDeviceContext->IASetIndexBuffer(
+            g_d3dIndexBufferV[i], //index buffer array pointer
+            DXGI_FORMAT_R16_UINT, //format of DXGI format
+            0); //offset
+    }
 
     g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
@@ -1351,9 +1430,10 @@ void Cleanup()
     SafeRelease(g_d3dDevice);
 }
 
-
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine, int cmdShow)
-{
+{//TranslateMessage
+
+
     UNREFERENCED_PARAMETER(prevInstance);
     UNREFERENCED_PARAMETER(cmdLine);
 

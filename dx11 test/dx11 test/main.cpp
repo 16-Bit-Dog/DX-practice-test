@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <algorithm>    // std::find
 #include <string>
+#include <WICTextureLoader.h> //https://github.com/microsoft/DirectXTK - used nuget to install the directX tool kit
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
@@ -59,9 +60,57 @@ std::vector<ID3D11Buffer*> g_d3dIndexBufferV;
 // Shader data
 ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info - I am very lazy for offsets, so I'll us
 ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
-
 //buffer objects to hold/store data below
 ///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
+
+std::vector<ID3D11ShaderResourceView*> textureV;
+std::vector<ID3D11Resource*> textureT;
+
+std::vector<ID3D11SamplerState*> sampler;
+
+void makeSampler() {
+    assert(g_d3dDevice);
+    ID3D11SamplerState* tmpSample = nullptr;
+    D3D11_SAMPLER_DESC tmpSampleDesc;
+
+        tmpSampleDesc.Filter = D3D11_FILTER{ D3D11_FILTER_ANISOTROPIC };
+        tmpSampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+        tmpSampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+        tmpSampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+        tmpSampleDesc.MipLODBias = 0;
+        tmpSampleDesc.MaxAnisotropy = 8;
+        tmpSampleDesc.ComparisonFunc = D3D11_COMPARISON_FUNC{ D3D11_COMPARISON_LESS };
+    //tmpSampleDesc.BorderColor[0] =
+        tmpSampleDesc.MinLOD = 1;
+        tmpSampleDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    g_d3dDevice->CreateSamplerState(&tmpSampleDesc, &tmpSample);
+
+    sampler.push_back(tmpSample);
+}
+
+void loadTex(std::wstring filePath) {
+    //get usable shader feature level - YES I am running this everytime a texture is loaded, for now I may do some funny GPU stuff as a test, and I don't think the shader levels are equally supported among the gpu's I will swap with
+    
+    assert(g_d3dDevice);
+    assert(g_d3dDeviceContext);
+    
+    ID3D11ShaderResourceView* trash_memV = nullptr; //fine to have a tmp
+    ID3D11Resource* trash_memT = nullptr;
+
+
+
+  //  std::vector<ID3D11ShaderResourceView*>& vecRefV = *textureV;
+  //  std::vector<ID3D11Resource*>& vecRefT = *textureT; // I will let this get auto cleaned, really does not matter - derefrence to vector is cheap, so I'm not bothered to do this
+
+    CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, &trash_memV, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ,NULL,NULL,NULL,NULL, NULL), NULL)); //may need to change my size aquiring
+    //I got the buffer resource since its cool for me to use
+
+    textureV.push_back(trash_memV);
+    textureT.push_back(trash_memT);
+
+
+}
 
 /*
 
@@ -149,8 +198,48 @@ std::vector<UINT> g_Indicies; /*= //orginisation of indices to fomulate cube
 };*/
 //
 
-
 /////////////////////////////////////////
+
+std::string GetLatestProfileBasic()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //get usable shader feature level
+
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "fx_5_0"; //11.1 and 11.0 are 5.0
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "fx_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "fx_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3:
+    {
+        return "fx_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "fx_4_0_level_9_1";
+    }
+    break;
+    } // switch( featureLevel )
+
+    return "";
+}
 
 void loadModel(std::string path) {
     //g_Vertices
@@ -248,6 +337,7 @@ void Cleanup(); //clean dx resources
  */
 int InitApplication(HINSTANCE hInstance, int cmdShow)
 {
+    CoInitialize(NULL);
     WNDCLASSEX wndClass = { 0 };
     wndClass.cbSize = sizeof(WNDCLASSEX); //size in bytes of WNDCLASSX 
     wndClass.style = CS_HREDRAW | CS_VREDRAW; //if moveing window, adjust width, then height (HRe is width, VRe is height)
@@ -340,17 +430,20 @@ void dupModelA() { //dup last gotten model
     //I am being very verbose here non purpose, rather than reusing a function I want control
 
     loadModel("./model/2.obj");
-
+    loadTex(L"./tex/2.png");
+    makeSampler();
 
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
     ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
-    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
+    vertexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
     vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices.size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
     vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
 
     vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+    vertexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+
     D3D11_SUBRESOURCE_DATA resourceData; //data for buffer
     ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
     resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
@@ -363,11 +456,11 @@ void dupModelA() { //dup last gotten model
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
-    indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
+    indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
     indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-
+    indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 
     resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
 
@@ -840,7 +933,46 @@ std::string GetLatestProfile<ID3D11PixelShader>()
     }
     return "";
 }
+//////////////
+template<>
+std::string GetLatestProfile<ID3D11ComputeShader>()
+{
+    assert(g_d3dDevice);
 
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //feature level to compile pixel shader 
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "cs_5_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "cs_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "cs_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3: //I don't think these exist below
+    {
+        return "cs_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "cs_4_0_level_9_1";
+    }
+    break;
+    }
+    return "";
+}
 // --I can make special options for other shader types
 
 /*
@@ -863,9 +995,10 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
     D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] =
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
-
+    
     auto hr = g_d3dDevice->CreateInputLayout( //make input layout - global change to input Layout
         vertexLayoutDesc, //vertex shader - input assembler data
         _countof(vertexLayoutDesc), //number of elements
@@ -895,11 +1028,23 @@ ID3D11PixelShader* CreateShader<ID3D11PixelShader>(ID3DBlob* pShaderBlob, ID3D11
     return pPixelShader;
 }
 
+template<>
+ID3D11ComputeShader* CreateShader<ID3D11ComputeShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11ComputeShader* pComputeShader = nullptr;
+    g_d3dDevice->CreateComputeShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pComputeShader); //pixel shader version of the vertex shader above
+
+    return pComputeShader;
+}
+
 
 template< class ShaderClass >
 ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& _profile) //LoadShader class
 {
-    volatile auto a = std::filesystem::exists("./SimplePixelShader.hlsl"); //debug test; this is not real project for much else than test and fun
+    volatile auto a = std::filesystem::exists("./SimpleComputeShader.hlsl"); //debug test; this is not real project for much else than test and fun
     OutputDebugStringW(fileName.c_str());
     ID3DBlob* pShaderBlob = nullptr; 
     ID3DBlob* pErrorBlob = nullptr;
@@ -950,6 +1095,61 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
     return pShader;
 }
 
+//template< class ShaderClass >
+//ShaderClass* LoadComputeShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& _profile) //LoadShader class
+//{
+//    //volatile auto a = std::filesystem::exists("./SimplePixelShader.hlsl"); //debug test; this is not real project for much else than test and fun
+//    OutputDebugStringW(fileName.c_str());
+//    ID3DBlob* pShaderBlob = nullptr;
+//    ID3DBlob* pErrorBlob = nullptr;
+//    ShaderClass* pShader = nullptr;
+//
+//    std::string profile = _profile;
+//    if (profile == "latest")
+//    {
+//        profile = GetLatestProfile<ShaderClass>(); //get able shader profiles/settings
+//    }
+//
+//    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+//
+//#if _DEBUG
+//    flags |= D3DCOMPILE_DEBUG;
+//#endif
+//
+//    HRESULT hr = D3DCompileFromFile( //HLSL shader into a Binary Large Object (BLOB)  --> D3DCompileFromFile does this
+//        fileName.c_str(),  //shader path name
+//        nullptr, //array of shader macro's [try async compile later] - https://docs.microsoft.com/en-ca/windows/win32/api/d3dcommon/ns-d3dcommon-d3d_shader_macro?redirectedfrom=MSDN  --> stuff like async creation exists
+//        D3D_COMPILE_STANDARD_FILE_INCLUDE,  //read file realtive to current directory
+//        entryPoint.c_str(), //name of shader for execution point
+//        profile.c_str(),// set of shader features to compile against --> converted to c_str() because winAPI... 
+//        flags, //compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-constants?redirectedfrom=MSDN  - like always use | to add more
+//        0, //effect compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-effect-constants?redirectedfrom=MSDN 
+//        &pShaderBlob,// pointer to output shader Blob - compiled stuff
+//        &pErrorBlob);// error to Blob 
+//
+//    if (FAILED(hr))
+//    {
+//        if (pErrorBlob) // if no blob, we free all data related to this
+//        {
+//            std::string errorMessage = (char*)pErrorBlob->GetBufferPointer(); //error message of when making shaderblob
+//            OutputDebugStringA(errorMessage.c_str()); //print string to visaul studio debug log - no need for a console
+//
+//            SafeRelease(pShaderBlob); //clear mem of shader
+//            SafeRelease(pErrorBlob); //clear mem of error shader
+//        }
+//
+//        //    return false;
+//    }
+//
+//    pShader = CreateShader<ShaderClass>(pShaderBlob, nullptr); // if no crash I can make a shader using shader blob 
+//
+//    SafeRelease(pShaderBlob); // no longer need shader mem
+//    SafeRelease(pErrorBlob); // no longer need shader mem
+//
+//    return pShader;
+//
+//}
+
 
 bool LoadContent()
 {
@@ -957,6 +1157,8 @@ bool LoadContent()
     assert(g_d3dDevice);
 
     loadModel("./model/1.obj");
+    loadTex(L"./tex/1.png");
+    makeSampler();
 
     // Create an initialize the vertex buffer.
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
@@ -964,7 +1166,7 @@ bool LoadContent()
 
     //vertexBufferDesc.StructureByteStride --- if you have a struct buffer --> done to be efficent with zero memory allocation, but this allows allocation by stride
 
-    vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
+    vertexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
     /* type of buffer:
     
@@ -993,6 +1195,8 @@ bool LoadContent()
     */
 
     vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+
+    vertexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 
     /*https://docs.microsoft.com/en-ca/windows/win32/api/d3d11/ne-d3d11-d3d11_resource_misc_flag?redirectedfrom=MSDN
   D3D11_RESOURCE_MISC_GENERATE_MIPS,
@@ -1048,11 +1252,12 @@ bool LoadContent()
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
-    indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
+    indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
     indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
+    indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
     
     resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
 
@@ -1103,10 +1308,7 @@ bool LoadContent()
     // Load the shaders --> 
     g_d3dVertexShader = LoadShader<ID3D11VertexShader>(L"./SimpleVertexShader.hlsl", "SimpleVertexShader", "latest"); //load shader hlsl file named as object SimpleVertexShader
     g_d3dPixelShader = LoadShader<ID3D11PixelShader>(L"./SimplePixelShader.hlsl", "SimplePixelShader", "latest"); //load shader hlsl file named as object SimplePixelShader
-
-    // Load the compiled vertex shader. from SimpleVertexShader obj
     
-
     //ID3DBlob* vertexShaderBlob; //shader data blob
 /*
 #if _DEBUG
@@ -1302,10 +1504,12 @@ void Render()
     assert(g_d3dDevice);
     assert(g_d3dDeviceContext);
 
-    Clear(Colors::CornflowerBlue, 1.0f, 0); //make background a color
+    Clear(Colors::DarkOliveGreen, 1.0f, 0); //make background a color
 
     const UINT vertexStride = sizeof(VertexPosColor); //
     const UINT offset = 0; //
+
+    
 
     for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
         g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
@@ -1353,6 +1557,10 @@ void Render()
         3, //number of buffers - obejct, frame, and application buffers
         g_d3dConstantBuffers); //arra of const buffer is given to device
 
+    //setup compute shader:
+ //   for (int i = 0; i < g_d3dComputeShader.size(); i++) {
+
+    // Disable Compute Shader left over garbage from test build that I lazily removed to get a working proj
 
     ///////////Setup the Rasterizer Stage
     /*
@@ -1364,17 +1572,28 @@ void Render()
     https://www.3dgep.com/introduction-to-directx-11/#Introduction  
     */
 
+    g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
+        g_d3dPixelShader,  // pointer to shader to bind
+        nullptr, //array of class instance - can be disabled
+        0); //number of instance
+
+    for (int i = 0; i < textureV.size(); i++) { //may later fix to allow 2 models to be unique
+        g_d3dDeviceContext->PSSetShaderResources(0, 1, &textureV[i]);
+        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[i]);
+
+        //textureV[i]->GetDesc();
+//        g_d3dDeviceContext->PSSetSamplers(0, 1, );
+        //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
+    }
+
+    ///
+
     g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
     g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
         1, //view port count 
         &g_Viewport); //view port struct made previously
 
     //Setup the Pixel Shader Stage
-
-    g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
-        g_d3dPixelShader,  // pointer to shader to bind
-        nullptr, //array of class instance - can be disabled
-        0); //number of instance
 
 
     /////////////Setup the Output Merger Stage
@@ -1416,6 +1635,7 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dInputLayout);
     SafeRelease(g_d3dVertexShader);
     SafeRelease(g_d3dPixelShader);
+    CoUninitialize();
 }
 
 void Cleanup()

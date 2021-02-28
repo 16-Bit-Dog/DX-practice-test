@@ -15,6 +15,7 @@ struct VertexPosColor
     XMFLOAT3 Normal;
     //XMFLOAT3 Color;
     XMFLOAT2 Tex;
+    int TexLink;
 };
 
 SHORT a = 0;
@@ -296,6 +297,7 @@ void loadModel(std::string path) {
 
             };
 
+            tmpV.TexLink = textureV.size();
             // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
             //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
 
@@ -323,6 +325,7 @@ void loadModel(std::string path) {
     }
 
     // g_Indicies
+    
 }
 
 // Forward declarations.
@@ -779,7 +782,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     ZeroMemory(&rasterizerDesc, sizeof(D3D11_RASTERIZER_DESC));
 
     rasterizerDesc.AntialiasedLineEnable = FALSE; //if MSAA is off: true turns on AA
-    rasterizerDesc.CullMode = D3D11_CULL_BACK;
+    rasterizerDesc.CullMode = D3D11_CULL_NONE;
     /*
     D3D11_CULL_NONE: Always draw all triangles.
     D3D11_CULL_FRONT : Do not draw triangles that are front - facing.
@@ -1004,7 +1007,8 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
         { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXLINK", 0, DXGI_FORMAT_R16_UINT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
     
     auto hr = g_d3dDevice->CreateInputLayout( //make input layout - global change to input Layout

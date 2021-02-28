@@ -12,12 +12,14 @@ using namespace DirectX; // All of the functionsand types defined in the DirectX
 struct VertexPosColor
 {
     XMFLOAT3 Position;
-    XMFLOAT3 Color;
+    XMFLOAT3 Normal;
+    //XMFLOAT3 Color;
     XMFLOAT2 Tex;
+    int TexLink;
 };
 
 SHORT a = 0;
-
+bool launchedOPAModel = FALSE;
 const LONG g_WindowWidth = 360;
 const LONG g_WindowHeight = 360;
 LPCSTR g_WindowClassName = ("DirectXWindowClass"); //window name
@@ -258,7 +260,6 @@ void loadModel(std::string path) {
     //XMFLOAT2 tmpa;
     VertexPosColor tmpV;
 
-    XMFLOAT3 normals;
     int i = 0;
 
     std::map<std::tuple<float, float, float>, int> b;
@@ -276,18 +277,27 @@ void loadModel(std::string path) {
 
             tmpV.Tex = { // flip image vertically to fix model texture
                 attrib.texcoords[2 * index.texcoord_index + 0], // this vector does not work if I do not set texcoods when making the obj
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                /*1.0f - */attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
-            tmpV.Color = {
+/*            tmpV.Color = {
 
                 attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
                 attrib.colors[3 * index.vertex_index + 1] ,
                 attrib.colors[3 * index.vertex_index + 2] // move color pos
 
             };
+            */
+            tmpV.Normal = {
 
+                attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.normals[3 * index.vertex_index + 1],
+                attrib.normals[3 * index.vertex_index + 2]
+                //attrib.normals[3 * index.vertex_index + 2] // move color pos
 
+            };
+
+            tmpV.TexLink = textureV.size();
             // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
             //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
 
@@ -315,6 +325,7 @@ void loadModel(std::string path) {
     }
 
     // g_Indicies
+    
 }
 
 // Forward declarations.
@@ -503,10 +514,11 @@ int Run()
 
   //              OutputDebugStringA("yeet\n");
 
-                if (keyA) {
+                if (keyA && launchedOPAModel == FALSE) {
 
                     dupModelA();
-                    keyA = FALSE;
+                 //   keyA = FALSE;
+                    launchedOPAModel = TRUE;
                 }
 
 //            }
@@ -770,7 +782,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     ZeroMemory(&rasterizerDesc, sizeof(D3D11_RASTERIZER_DESC));
 
     rasterizerDesc.AntialiasedLineEnable = FALSE; //if MSAA is off: true turns on AA
-    rasterizerDesc.CullMode = D3D11_CULL_BACK;
+    rasterizerDesc.CullMode = D3D11_CULL_NONE;
     /*
     D3D11_CULL_NONE: Always draw all triangles.
     D3D11_CULL_FRONT : Do not draw triangles that are front - facing.
@@ -995,7 +1007,8 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
         { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXLINK", 0, DXGI_FORMAT_R16_UINT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
     
     auto hr = g_d3dDevice->CreateInputLayout( //make input layout - global change to input Layout
@@ -1584,7 +1597,7 @@ void Render()
         //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
     }
 
-    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]);
+    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
     ///
 

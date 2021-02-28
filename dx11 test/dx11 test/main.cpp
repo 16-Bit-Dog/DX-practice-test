@@ -12,12 +12,13 @@ using namespace DirectX; // All of the functionsand types defined in the DirectX
 struct VertexPosColor
 {
     XMFLOAT3 Position;
-    XMFLOAT3 Color;
+    XMFLOAT3 Normal;
+    //XMFLOAT3 Color;
     XMFLOAT2 Tex;
 };
 
 SHORT a = 0;
-
+bool launchedOPAModel = FALSE;
 const LONG g_WindowWidth = 360;
 const LONG g_WindowHeight = 360;
 LPCSTR g_WindowClassName = ("DirectXWindowClass"); //window name
@@ -279,14 +280,22 @@ void loadModel(std::string path) {
                 1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
-            tmpV.Color = {
+/*            tmpV.Color = {
 
                 attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
                 attrib.colors[3 * index.vertex_index + 1] ,
                 attrib.colors[3 * index.vertex_index + 2] // move color pos
 
             };
+            */
+            tmpV.Normal = {
 
+                attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.normals[3 * index.vertex_index + 1],
+                attrib.normals[3 * index.vertex_index + 2]
+                //attrib.normals[3 * index.vertex_index + 2] // move color pos
+
+            };
 
             // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
             //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
@@ -503,10 +512,11 @@ int Run()
 
   //              OutputDebugStringA("yeet\n");
 
-                if (keyA) {
+                if (keyA && launchedOPAModel == FALSE) {
 
                     dupModelA();
-                    keyA = FALSE;
+                 //   keyA = FALSE;
+                    launchedOPAModel = TRUE;
                 }
 
 //            }
@@ -1584,7 +1594,7 @@ void Render()
         //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
     }
 
-    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]);
+    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
     ///
 

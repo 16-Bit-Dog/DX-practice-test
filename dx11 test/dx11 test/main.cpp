@@ -259,7 +259,6 @@ void loadModel(std::string path) {
     //XMFLOAT2 tmpa;
     VertexPosColor tmpV;
 
-    XMFLOAT3 normals;
     int i = 0;
 
     std::map<std::tuple<float, float, float>, int> b;
@@ -277,7 +276,7 @@ void loadModel(std::string path) {
 
             tmpV.Tex = { // flip image vertically to fix model texture
                 attrib.texcoords[2 * index.texcoord_index + 0], // this vector does not work if I do not set texcoods when making the obj
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                /*1.0f - */attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
 /*            tmpV.Color = {

@@ -106,8 +106,8 @@ void loadTex(std::wstring filePath) {
     CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, &trash_memV, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ,NULL,NULL,NULL,NULL, NULL), NULL)); //may need to change my size aquiring
     //I got the buffer resource since its cool for me to use
 
-    textureV.push_back(trash_memV);
-    textureT.push_back(trash_memT);
+    textureV.push_back((trash_memV));
+    textureT.push_back((trash_memT));
 
 
 }
@@ -426,13 +426,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
  */
 
 void dupModelA() { //dup last gotten model
-
+    
     //I am being very verbose here non purpose, rather than reusing a function I want control
 
     loadModel("./model/2.obj");
     loadTex(L"./tex/2.png");
-    makeSampler();
-
+    
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
     ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
@@ -507,7 +506,7 @@ int Run()
                 if (keyA) {
 
                     dupModelA();
-
+                    keyA = FALSE;
                 }
 
 //            }
@@ -1577,14 +1576,15 @@ void Render()
         nullptr, //array of class instance - can be disabled
         0); //number of instance
 
-    for (int i = 0; i < textureV.size(); i++) { //may later fix to allow 2 models to be unique
-        g_d3dDeviceContext->PSSetShaderResources(0, 1, &textureV[i]);
-        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[i]);
-
+    for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
+        g_d3dDeviceContext->PSSetShaderResources(0+x, 1, &textureV[x]);
+        
         //textureV[i]->GetDesc();
 //        g_d3dDeviceContext->PSSetSamplers(0, 1, );
         //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
     }
+
+    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]);
 
     ///
 

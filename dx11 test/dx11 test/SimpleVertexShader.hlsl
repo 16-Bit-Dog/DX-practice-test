@@ -39,7 +39,7 @@ VertexShaderOutput SimpleVertexShader(AppData IN) //entry point for vertex shade
     
 //OUT.color = float4(IN.color, 1.0f); //float4 is what we use for a pixel shader variable - so we declare a OUT.var for color in this sense (1.0 means we send the whole value, un modified - 0.9 would send faactor of 9 value
     OUT.tex = IN.tex;
-    OUT.normal = IN.normal;
+    OUT.normal = mul(mvp, float4(IN.normal, 1.0f));
     
     return OUT; //output will be going to pixel shader
 }

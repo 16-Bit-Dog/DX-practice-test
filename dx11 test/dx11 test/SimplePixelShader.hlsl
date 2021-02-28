@@ -14,16 +14,13 @@ float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
 //    IN.color = float4(100,50,30,0);
     //OUT.color = float4(0, 1.0f, 0, 1.0f);
 
-    float3 lightDirection = normalize(float3(1, -1, 0)); //light position...
+    float3 lightDirection = normalize(float3(1, -1, 0));
 
     float4 textureColor;
 
     textureColor = shaderTexture.Sample(SampleType, IN.tex); //later I should make a funny meme worthy filter; and some texture interpolator for fun stuff
 
-    float lightMagnitude = 0.8f * saturate(dot(IN.normal, -lightDirection)) + 0.2f;
-    
-    return textureColor * lightMagnitude; //return unchanged color
-    
+    float lightMagnitude = 0.8f * saturate(dot(IN.normal, -lightDirection)) - 0.2f;
 
-   // return shaderTexture.Sample(SampleType, IN.tex);
+    return textureColor; //return unchanged color since I am not doing the light shader yet*
 }

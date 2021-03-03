@@ -6,6 +6,8 @@
 #include <algorithm>    // std::find
 #include <string>
 #include <WICTextureLoader.h> //https://github.com/microsoft/DirectXTK - used nuget to install the directX tool kit
+#include <conio.h>
+#include <future>
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
@@ -69,6 +71,18 @@ std::vector<ID3D11ShaderResourceView*> textureV;
 std::vector<ID3D11Resource*> textureT;
 
 std::vector<ID3D11SamplerState*> sampler;
+
+std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
+
+float eyePosX = 0;
+float eyePosY = 0;
+float eyePosZ = 1;
+
+float modx = 0;
+
+float mody = 0;
+
+float modz = 0;
 
 void makeSampler() {
     assert(g_d3dDevice);
@@ -481,6 +495,50 @@ void dupModelA() { //dup last gotten model
 
 
     OutputDebugStringA("\n");
+}
+
+void keyInputAsync() { //launch and leave it forever running in a spin lock
+
+    while (true) {
+        
+        if (GetKeyState(VK_UP) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            mody = 0.1;//up
+
+        }
+        
+        if (GetKeyState(VK_DOWN) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            mody = -0.1;//up
+
+        }
+
+        if (GetKeyState(VK_LEFT) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            modx = -0.1;//up
+
+        }
+
+        if (GetKeyState(VK_RIGHT) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            modx = 0.1;//up
+
+        }
+
+        if (GetKeyState(0x57) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            modz = -0.1;//up
+
+        }
+
+        if (GetKeyState(0x53) & 0x8000) { //multipul keys can be pressed at once... do not care much
+
+            modz = 0.1;//up
+
+        }
+
+    }
+
 }
 
 int Run()
@@ -1165,7 +1223,10 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 
 bool LoadContent()
 {
-    
+    inputRelatedThread = std::async(std::launch::async, [] {
+        keyInputAsync();
+        });
+
     assert(g_d3dDevice);
 
     loadModel("./model/1.obj");
@@ -1463,22 +1524,33 @@ bool LoadContent()
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
 
+    eyePosX += modx;
+    eyePosY += mody;
+    eyePosZ += modz;
+
+    eyePosZ = abs(eyePosZ);
 
     
-    XMVECTOR eyePosition = XMVectorSet(0, 0, -10, 1); //eye pos
-    XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1); // cam focus
+
+    XMVECTOR eyePosition = XMVectorSet(eyePosX, eyePosY, eyePosZ, 1); //eye pos
+    XMVECTOR eyeDirection = XMVectorSet(0, 1, 0, 0); // cam focus --> add trignometric functions to allow this focus to adjust with rotation of camrea - 
     XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0); //dir up
-    g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection); //matrix LH pos
+
+    g_ViewMatrix = XMMatrixLookAtLH(eyePosition, eyeDirection, upDirection); //matrix LH pos
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0); //update subresource data of constant buffer
 
 
     static float angle = 0.0f;
-    angle += 90.0f * deltaTime; //change cam angle based on time
-    XMVECTOR rotationAxis = XMVectorSet(0, 1, 1, 0);
+    angle += 0.0f * deltaTime; //change cam angle based on time
+    XMVECTOR rotationAxis = XMVectorSet(0, 1, 0, 0);
 
     g_WorldMatrix = XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
-}
+
+    modx = 0;
+    mody = 0;
+    modz = 0;
+}   
 
 //clear old back-buffer
 // Clear the color and depth buffers.

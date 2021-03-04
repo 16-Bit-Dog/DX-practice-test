@@ -64,6 +64,9 @@ std::vector<ID3D11Buffer*> g_d3dIndexBufferV;
 // Shader data
 ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info - I am very lazy for offsets, so I'll us
 ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
+ID3D11GeometryShader* g_d3dGeometryShader = nullptr;
+ID3D11ComputeShader* g_d3dComputeShader = nullptr;
+
 //buffer objects to hold/store data below
 ///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
 
@@ -1042,6 +1045,48 @@ std::string GetLatestProfile<ID3D11ComputeShader>()
     }
     return "";
 }
+
+//////////////
+template<>
+std::string GetLatestProfile<ID3D11GeometryShader>()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //feature level to compile pixel shader 
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "gs_5_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "gs_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "gs_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3: //I don't think these exist below
+    {
+        return "gs_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "gs_4_0_level_9_1";
+    }
+    break;
+    }
+    return "";
+}
+
 // --I can make special options for other shader types
 
 /*
@@ -1110,6 +1155,17 @@ ID3D11ComputeShader* CreateShader<ID3D11ComputeShader>(ID3DBlob* pShaderBlob, ID
     return pComputeShader;
 }
 
+template<>
+ID3D11GeometryShader* CreateShader<ID3D11GeometryShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11GeometryShader* pGeometryShader = nullptr;
+    g_d3dDevice->CreateGeometryShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pGeometryShader); //pixel shader version of the vertex shader above
+
+    return pGeometryShader;
+}
 
 template< class ShaderClass >
 ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& _profile) //LoadShader class
@@ -1220,6 +1276,82 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 //
 //}
 
+//Shader Resource View - adapted from codeproject.com since this ironically is exactly what I need, and credit is deserved... even if I planned to do this my self
+HRESULT CreateBufferSRV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
+    ID3D11ShaderResourceView** ppSRVOut)
+{
+
+    D3D11_BUFFER_DESC descBuf;
+    ZeroMemory(&descBuf, sizeof(descBuf));
+    pBuffer->GetDesc(&descBuf);
+    D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+    ZeroMemory(&desc, sizeof(desc));
+    desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
+    desc.BufferEx.FirstElement = 0;
+
+    if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS)
+    {
+        // This is a Raw Buffer
+        desc.Format = DXGI_FORMAT_R32_TYPELESS;
+        desc.BufferEx.Flags = D3D11_BUFFEREX_SRV_FLAG_RAW;
+        desc.BufferEx.NumElements = descBuf.ByteWidth / 4;
+    }
+    else
+        if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)
+        {
+
+            // This is a Structured Buffer
+            desc.Format = DXGI_FORMAT_UNKNOWN;
+            desc.BufferEx.NumElements =
+                descBuf.ByteWidth / descBuf.StructureByteStride;
+        }
+        else
+        {
+            return E_INVALIDARG;
+        }
+    return pDevice->CreateShaderResourceView(pBuffer, &desc, ppSRVOut);
+}
+
+//uordered Acsess view - adapted from codeproject.com
+HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
+    ID3D11UnorderedAccessView** ppUAVOut)
+{
+    D3D11_BUFFER_DESC descBuf;
+    ZeroMemory(&descBuf, sizeof(descBuf));
+    pBuffer->GetDesc(&descBuf);
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
+    ZeroMemory(&desc, sizeof(desc));
+    desc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    desc.Buffer.FirstElement = 0;
+
+    if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS)
+    {
+        // This is a Raw Buffer
+        desc.Format = DXGI_FORMAT_R32_TYPELESS;
+        // Format must be DXGI_FORMAT_R32_TYPELESS,
+        // when creating Raw Unordered Access View
+
+        desc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+        desc.Buffer.NumElements = descBuf.ByteWidth / 4;
+    }
+    else
+        if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)
+        {
+            // This is a Structured Buffer
+            desc.Format = DXGI_FORMAT_UNKNOWN;
+            // Format must be must be DXGI_FORMAT_UNKNOWN,
+            // when creating a View of a Structured Buffer
+
+            desc.Buffer.NumElements =
+                descBuf.ByteWidth / descBuf.StructureByteStride;
+        }
+        else
+        {
+            return E_INVALIDARG;
+        }
+    return pDevice->CreateUnorderedAccessView(pBuffer, &desc, ppUAVOut);
+}
 
 bool LoadContent()
 {
@@ -1381,7 +1513,11 @@ bool LoadContent()
     // Load the shaders --> 
     g_d3dVertexShader = LoadShader<ID3D11VertexShader>(L"./SimpleVertexShader.hlsl", "SimpleVertexShader", "latest"); //load shader hlsl file named as object SimpleVertexShader
     g_d3dPixelShader = LoadShader<ID3D11PixelShader>(L"./SimplePixelShader.hlsl", "SimplePixelShader", "latest"); //load shader hlsl file named as object SimplePixelShader
-    
+    g_d3dGeometryShader = LoadShader<ID3D11GeometryShader>(L"./SimpleGeometryShader.hlsl", "SimpleGeometryShader", "latest"); //load shader hlsl file named as object SimplePixelShader
+    g_d3dComputeShader = LoadShader<ID3D11ComputeShader>(L"./SimpleComputeShader.hlsl", "SimpleComputeShader", "latest");
+
+    // load Geometry Shader ^
+
     //ID3DBlob* vertexShaderBlob; //shader data blob
 /*
 #if _DEBUG
@@ -1611,6 +1747,8 @@ void Render()
             &offset); //offset for each buffer in vertex buffer array
     }
 
+
+
     //g_d3dDeviceContext -> Map(g_d3dVertexBuffer,0, D3D11_MAP_WRITE, 0, &VMmap); //for now map to kill all later - will need to revamp this to make it additive later
 
     //g_d3dDeviceContext->Unmap(g_d3dVertexBuffer, 0);
@@ -1629,12 +1767,18 @@ void Render()
         D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 
 
+
     /////////Setup the Vertex Shader Stage
+
+
 
     g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
         g_d3dVertexShader, //pointer to shader to bind
         nullptr, //array of class instance - can be disabled
         0); //num of class instance above
+
+
+    
 
     g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
         0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
@@ -1671,7 +1815,24 @@ void Render()
 
     g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
-    ///
+    
+///
+    /*
+    g_d3dDeviceContext->GSSetShader(
+        g_d3dGeometryShader,
+        nullptr,
+        0
+    );// geo after v
+    */
+    /*
+    g_d3dDeviceContext->GSSetShaderResources(
+        1,
+        0,
+        nullptr//&textureV[1] //<-- put another buffer here to test?
+    );*/
+    
+    g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
+
 
     g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
     g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
@@ -1697,6 +1858,8 @@ void Render()
         0,  //start index location
         0); //base vertex location
     
+    g_d3dDeviceContext->DrawAuto(); //for gs stream output
+
     /*
     g_d3dDeviceContext->Draw( //draw indice+vertex
         g_Vertices.size(), //indice count
@@ -1720,6 +1883,8 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dInputLayout);
     SafeRelease(g_d3dVertexShader);
     SafeRelease(g_d3dPixelShader);
+    SafeRelease(g_d3dGeometryShader);
+    SafeRelease(g_d3dComputeShader);
     CoUninitialize();
 }
 

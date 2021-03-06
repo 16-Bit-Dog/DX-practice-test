@@ -26,9 +26,17 @@
     <ClInclude Include="DirectXTemplatePCH.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="tiny_obj_loader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="SimpleVertexShader.hlsl" />
     <FxCompile Include="SimplePixelShader.hlsl" />
+    <FxCompile Include="SimpleComputeShader.hlsl" />
+    <FxCompile Include="SimpleGeometryShader.hlsl" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

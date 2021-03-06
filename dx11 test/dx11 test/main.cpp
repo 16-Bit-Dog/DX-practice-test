@@ -9,6 +9,11 @@
 #include <conio.h>
 #include <future>
 
+
+
+HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
+    ID3D11UnorderedAccessView** ppUAVOut);
+
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
 struct VertexPosColor
@@ -72,8 +77,13 @@ ID3D11ComputeShader* g_d3dComputeShader = nullptr;
 
 std::vector<ID3D11ShaderResourceView*> textureV;
 std::vector<ID3D11Resource*> textureT;
+std::vector<ID3D11UnorderedAccessView*> textureU;
+
 
 std::vector<ID3D11SamplerState*> sampler;
+
+
+
 
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
@@ -116,18 +126,104 @@ void loadTex(std::wstring filePath) {
     
     ID3D11ShaderResourceView* trash_memV = nullptr; //fine to have a tmp
     ID3D11Resource* trash_memT = nullptr;
-
+    ID3D11UnorderedAccessView* trash_memU = nullptr;
 
 
   //  std::vector<ID3D11ShaderResourceView*>& vecRefV = *textureV;
   //  std::vector<ID3D11Resource*>& vecRefT = *textureT; // I will let this get auto cleaned, really does not matter - derefrence to vector is cheap, so I'm not bothered to do this
 
-    CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, &trash_memV, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ,NULL,NULL,NULL,NULL, NULL), NULL)); //may need to change my size aquiring
+    volatile auto hr = CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, nullptr, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ,NULL,NULL,NULL,NULL, NULL), NULL)); //may need to change my size aquiring
     //I got the buffer resource since its cool for me to use
 
-    textureV.push_back((trash_memV));
-    textureT.push_back((trash_memT));
+    
+    
+    //make unordered resource view alongSide non for now since I want to have ease of compute shader fun
 
+    /* don't need
+    /*D3D11_BUFFER_UAV TexGeBufOp;
+    TexGeBufOp.FirstElement = 0;
+    TexGeBufOp.NumElements = 1;
+    TexGeBufOp.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+    
+
+    D3D11_TEX2D_UAV TexGeBufOp;
+    TexGeBufOp.MipSlice = 0;
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC UAVOption;
+    UAVOption.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    UAVOption.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    UAVOption.Texture2D = TexGeBufOp;
+    */
+
+
+    hr = g_d3dDevice->CreateShaderResourceView(trash_memT, NULL, &trash_memV);
+
+    if (trash_memV == nullptr) {
+        abort(); //crash if no memory loaded 
+
+    }
+
+    ID3D11Texture2D* gpuTex = nullptr;
+
+    D3D11_TEXTURE2D_DESC gpuTexDesc;
+    gpuTexDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    gpuTexDesc.Width = 1024; //need more dynamic resolution control for creating textures
+    gpuTexDesc.Height = 1024;
+    gpuTexDesc.MipLevels = 1;
+    gpuTexDesc.ArraySize = 1;
+    gpuTexDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS |
+        D3D11_BIND_SHADER_RESOURCE;
+    gpuTexDesc.SampleDesc.Count = 1;
+    gpuTexDesc.SampleDesc.Quality = 0;
+    gpuTexDesc.MiscFlags = 0;
+
+    g_d3dDevice->CreateTexture2D(&gpuTexDesc, NULL, &gpuTex);
+    
+    g_d3dDeviceContext->CopyResource(gpuTex, trash_memT);
+
+    //D3D11_UNORDERED_ACCESS_VIEW_DESC UAVOption;
+    //UAVOption.Format = DXGI_FORMAT_R8G8B8A8_UNORM; //write only format - so texture view must be the reader
+    //UAVOption.ViewDimension = 
+    D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
+   //DXGI_FORMAT_R32_TYPELESS
+    UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    UAVdesc.Buffer.FirstElement = 0;
+    UAVdesc.Buffer.NumElements = 1;
+
+    UAVdesc.Texture2D.MipSlice = 0;
+    
+
+
+    hr = g_d3dDevice->CreateUnorderedAccessView(gpuTex, &UAVdesc, &trash_memU);
+    
+    if (trash_memU == nullptr) {
+        abort(); //crash if no memory loaded 
+    }
+
+
+    /* don't need
+    D3D11_BUFFER_SRV TexGeBuffS;
+    TexGeBuffS.FirstElement = 0;
+    TexGeBuffS.NumElements = 1;
+    
+    //TexGeBufOp.Flags = D3D11_BUFFER_SRV_FLAG_RAW;
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC SAVOption;
+    SAVOption.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    SAVOption.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+    SAVOption.Buffer = TexGeBuffS;
+    */
+
+
+
+
+    textureU.push_back(trash_memU); //unordered view
+    textureV.push_back(trash_memV); //stock shader view linked to uordered view to reduce copying
+    textureT.push_back(trash_memT); //textureT memory hold data to ordered resource and unordered resource view
+  
+
+    
 
 }
 
@@ -674,9 +770,9 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     //swapChainDesc.Flags; //https://docs.microsoft.com/en-ca/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_chain_flag?redirectedfrom=MSDN <-- diffrent flags
     UINT createDeviceFlags = 0;
     //D3D11_CREATE_DEVICE_DEBUG is a debug layer to add extra checks
-#if _DEBUG
+//#if _DEBUG
     createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG; 
-#endif
+//#endif
 
     // These are the feature levels that we will accept.
     D3D_FEATURE_LEVEL featureLevels[] = 
@@ -1276,82 +1372,6 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 //
 //}
 
-//Shader Resource View - adapted from codeproject.com since this ironically is exactly what I need, and credit is deserved... even if I planned to do this my self
-HRESULT CreateBufferSRV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
-    ID3D11ShaderResourceView** ppSRVOut)
-{
-
-    D3D11_BUFFER_DESC descBuf;
-    ZeroMemory(&descBuf, sizeof(descBuf));
-    pBuffer->GetDesc(&descBuf);
-    D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-    ZeroMemory(&desc, sizeof(desc));
-    desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
-    desc.BufferEx.FirstElement = 0;
-
-    if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS)
-    {
-        // This is a Raw Buffer
-        desc.Format = DXGI_FORMAT_R32_TYPELESS;
-        desc.BufferEx.Flags = D3D11_BUFFEREX_SRV_FLAG_RAW;
-        desc.BufferEx.NumElements = descBuf.ByteWidth / 4;
-    }
-    else
-        if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)
-        {
-
-            // This is a Structured Buffer
-            desc.Format = DXGI_FORMAT_UNKNOWN;
-            desc.BufferEx.NumElements =
-                descBuf.ByteWidth / descBuf.StructureByteStride;
-        }
-        else
-        {
-            return E_INVALIDARG;
-        }
-    return pDevice->CreateShaderResourceView(pBuffer, &desc, ppSRVOut);
-}
-
-//uordered Acsess view - adapted from codeproject.com
-HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
-    ID3D11UnorderedAccessView** ppUAVOut)
-{
-    D3D11_BUFFER_DESC descBuf;
-    ZeroMemory(&descBuf, sizeof(descBuf));
-    pBuffer->GetDesc(&descBuf);
-
-    D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
-    ZeroMemory(&desc, sizeof(desc));
-    desc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
-    desc.Buffer.FirstElement = 0;
-
-    if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS)
-    {
-        // This is a Raw Buffer
-        desc.Format = DXGI_FORMAT_R32_TYPELESS;
-        // Format must be DXGI_FORMAT_R32_TYPELESS,
-        // when creating Raw Unordered Access View
-
-        desc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
-        desc.Buffer.NumElements = descBuf.ByteWidth / 4;
-    }
-    else
-        if (descBuf.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)
-        {
-            // This is a Structured Buffer
-            desc.Format = DXGI_FORMAT_UNKNOWN;
-            // Format must be must be DXGI_FORMAT_UNKNOWN,
-            // when creating a View of a Structured Buffer
-
-            desc.Buffer.NumElements =
-                descBuf.ByteWidth / descBuf.StructureByteStride;
-        }
-        else
-        {
-            return E_INVALIDARG;
-        }
-    return pDevice->CreateUnorderedAccessView(pBuffer, &desc, ppUAVOut);
-}
 
 bool LoadContent()
 {
@@ -1815,7 +1835,7 @@ void Render()
 
     g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
-    
+
 ///
     /*
     g_d3dDeviceContext->GSSetShader(
@@ -1831,7 +1851,40 @@ void Render()
         nullptr//&textureV[1] //<-- put another buffer here to test?
     );*/
     
+
+
+
+
+
+
+
+
+
+
+    
     g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
+    g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
+
+    g_d3dDeviceContext->Dispatch(
+        1,
+        1,
+        1
+    );
+
+    //textureU[0], textureV[0] <-- views of unordered and then ordered
+    //COPY RESOURCES g_d3dDeviceContext->CopyResource();
+    //textureU[0]->GetDesc() <- aquire shader resource struct
+
+   // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
+    
+
+
+
+
+
+
+
 
 
     g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
@@ -1859,6 +1912,8 @@ void Render()
         0); //base vertex location
     
     g_d3dDeviceContext->DrawAuto(); //for gs stream output
+
+
 
     /*
     g_d3dDeviceContext->Draw( //draw indice+vertex

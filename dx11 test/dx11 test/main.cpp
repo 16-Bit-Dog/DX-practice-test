@@ -77,6 +77,7 @@ ID3D11ComputeShader* g_d3dComputeShader = nullptr;
 
 std::vector<ID3D11ShaderResourceView*> textureV;
 std::vector<ID3D11Resource*> textureT;
+std::vector<ID3D11Resource*> textureTU;
 std::vector<ID3D11UnorderedAccessView*> textureU;
 
 
@@ -156,12 +157,6 @@ void loadTex(std::wstring filePath) {
     */
 
 
-    hr = g_d3dDevice->CreateShaderResourceView(trash_memT, NULL, &trash_memV);
-
-    if (trash_memV == nullptr) {
-        abort(); //crash if no memory loaded 
-
-    }
 
     ID3D11Texture2D* gpuTex = nullptr;
 
@@ -176,7 +171,7 @@ void loadTex(std::wstring filePath) {
     gpuTexDesc.SampleDesc.Count = 1;
     gpuTexDesc.SampleDesc.Quality = 0;
     gpuTexDesc.MiscFlags = 0;
-
+    gpuTexDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ;
     g_d3dDevice->CreateTexture2D(&gpuTexDesc, NULL, &gpuTex);
     
     g_d3dDeviceContext->CopyResource(gpuTex, trash_memT);
@@ -194,6 +189,12 @@ void loadTex(std::wstring filePath) {
     UAVdesc.Texture2D.MipSlice = 0;
     
 
+
+    hr = g_d3dDevice->CreateShaderResourceView(trash_memT, NULL, &trash_memV); //seperate
+    if (trash_memV == nullptr) {
+        abort(); //crash if no memory loaded 
+
+    }
 
     hr = g_d3dDevice->CreateUnorderedAccessView(gpuTex, &UAVdesc, &trash_memU);
     
@@ -221,7 +222,7 @@ void loadTex(std::wstring filePath) {
     textureU.push_back(trash_memU); //unordered view
     textureV.push_back(trash_memV); //stock shader view linked to uordered view to reduce copying
     textureT.push_back(trash_memT); //textureT memory hold data to ordered resource and unordered resource view
-  
+    textureTU.push_back(gpuTex);
 
     
 
@@ -1859,11 +1860,9 @@ void Render()
 
 
 
-
-
     
     g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
-    g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+    //g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
     g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
 
     g_d3dDeviceContext->Dispatch(
@@ -1872,17 +1871,22 @@ void Render()
         1
     );
 
+    
+
     //textureU[0], textureV[0] <-- views of unordered and then ordered
     //COPY RESOURCES g_d3dDeviceContext->CopyResource();
     //textureU[0]->GetDesc() <- aquire shader resource struct
 
    // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
     
+    ID3D11ShaderResourceView* unbind1 = nullptr;
+    ID3D11UnorderedAccessView* unbind2 = nullptr;
 
+    g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
+    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0); //change UAV alongside SRV
 
-
-
-
+  
+    //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
 
 
 
@@ -1894,6 +1898,7 @@ void Render()
 
     //Setup the Pixel Shader Stage
 
+    g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, 0, textureTU[0], 0, 0 );
 
     /////////////Setup the Output Merger Stage
 

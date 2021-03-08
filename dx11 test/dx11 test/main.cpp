@@ -84,8 +84,7 @@ std::vector<ID3D11UnorderedAccessView*> textureU; //UAV
 
 std::vector<ID3D11SamplerState*> sampler;
 
-
-
+XMFLOAT4X4 constUnsortType;
 
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
@@ -284,6 +283,7 @@ enum ConstantBuffer
     CB_Application,
     CB_Frame,
     CB_Object,
+    CB_ConstUnsortType,
     NumConstantBuffers
 };
 
@@ -701,7 +701,11 @@ int Run()
         {//some time thing
             DWORD currentTime = timeGetTime();
             float deltaTime = (currentTime - previousTime) / 1000.0f;
+
+            constUnsortType.m[0][0] += float((currentTime - previousTime) / 1000.0f);
+
             previousTime = currentTime;
+            
 
             // Cap the delta time to the max time step (useful if your 
             // debugging and you don't want the deltaTime value to explode.
@@ -1563,6 +1567,14 @@ bool LoadContent()
         return false;
     }
 
+    constantBufferDesc.ByteWidth = sizeof(float)*4; //size of float*4 to not crash, but for syntax candy I put float to notify me of what the value is
+    hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[CB_ConstUnsortType]); //make const buffer for object 
+    if (FAILED(hr))
+    {
+        return false;
+    }
+
+
     // we have 3 buffers of the same so we can modify object space, frame, and application space all seperately
 
     /*    
@@ -1741,12 +1753,20 @@ void Update(float deltaTime) //pass net time to pass to have a timer
     angle += 0.0f * deltaTime; //change cam angle based on time
     XMVECTOR rotationAxis = XMVectorSet(0, 1, 0, 0);
 
+    XMMATRIX tmp = XMLoadFloat4x4(&constUnsortType);
+
     g_WorldMatrix = XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
-
+    g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_ConstUnsortType], 0, nullptr, &tmp, 0, 0);
     modx = 0;
     mody = 0;
     modz = 0;
+
+    if (constUnsortType.m[0][0] > 100000000) {
+
+        constUnsortType.m[0][0] = 0;
+
+    }
 }   
 
 //clear old back-buffer
@@ -1843,7 +1863,7 @@ void Render()
 
     g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
         0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
-        3, //number of buffers - obejct, frame, and application buffers
+        4, //number of buffers - obejct, frame, and application buffers
         g_d3dConstantBuffers); //arra of const buffer is given to device
 
     //setup compute shader:
@@ -1906,6 +1926,7 @@ void Render()
     g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
     g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
     g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], NULL); //change UAV alongside SRV
+    g_d3dDeviceContext->CSSetConstantBuffers(0, 4, g_d3dConstantBuffers);
 
     g_d3dDeviceContext->Dispatch(
         32,
@@ -2009,6 +2030,7 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dConstantBuffers[CB_Application]);
     SafeRelease(g_d3dConstantBuffers[CB_Frame]);
     SafeRelease(g_d3dConstantBuffers[CB_Object]);
+    SafeRelease(g_d3dConstantBuffers[CB_ConstUnsortType]);
     SafeRelease(g_d3dIndexBuffer);
     SafeRelease(g_d3dVertexBuffer);
     SafeRelease(g_d3dInputLayout);
@@ -2016,6 +2038,17 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dPixelShader);
     SafeRelease(g_d3dGeometryShader);
     SafeRelease(g_d3dComputeShader);
+    for (int i = 0; i < textureT.size(); i++) {
+
+        SafeRelease(textureT[i]);
+
+    }
+    for (int i = 0; i < textureTU.size(); i++) {
+
+        SafeRelease(textureTU[i]);
+
+    }
+    
     CoUninitialize();
 }
 

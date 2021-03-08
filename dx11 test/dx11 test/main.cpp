@@ -75,10 +75,11 @@ ID3D11ComputeShader* g_d3dComputeShader = nullptr;
 //buffer objects to hold/store data below
 ///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
 
-std::vector<ID3D11ShaderResourceView*> textureV;
-std::vector<ID3D11Resource*> textureT;
-std::vector<ID3D11Resource*> textureTU;
-std::vector<ID3D11UnorderedAccessView*> textureU;
+std::vector<ID3D11ShaderResourceView*> textureV; //SRV
+std::vector<ID3D11Resource*> textureT; // SRV data
+std::vector<ID3D11Resource*> textureTU; //UAV buffer data
+std::vector<ID3D11UnorderedAccessView*> textureU; //UAV
+
 
 
 std::vector<ID3D11SamplerState*> sampler;
@@ -156,25 +157,55 @@ void loadTex(std::wstring filePath) {
     UAVOption.Texture2D = TexGeBufOp;
     */
 
-
+    ID3D11Texture2D* pTI = 0;
+    D3D11_TEXTURE2D_DESC descOt2D;
+   // volatile int asd = sizeof(trash_memT);
+    trash_memT->QueryInterface< ID3D11Texture2D >(&pTI); //get texture directly from resource
+    pTI->GetDesc(&descOt2D);
 
     ID3D11Texture2D* gpuTex = nullptr;
+    ID3D11Texture2D* gpuTexS = nullptr;
 
     D3D11_TEXTURE2D_DESC gpuTexDesc;
+    ZeroMemory(&gpuTexDesc, sizeof(gpuTexDesc));
     gpuTexDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    gpuTexDesc.Width = 1024; //need more dynamic resolution control for creating textures
-    gpuTexDesc.Height = 1024;
+    gpuTexDesc.Width = descOt2D.Width; //need more dynamic resolution control for creating textures
+    gpuTexDesc.Height = descOt2D.Height;
     gpuTexDesc.MipLevels = 1;
     gpuTexDesc.ArraySize = 1;
     gpuTexDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS |
         D3D11_BIND_SHADER_RESOURCE;
     gpuTexDesc.SampleDesc.Count = 1;
     gpuTexDesc.SampleDesc.Quality = 0;
-    gpuTexDesc.MiscFlags = 0;
+    gpuTexDesc.MiscFlags = 0;//D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
     gpuTexDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ;
-    g_d3dDevice->CreateTexture2D(&gpuTexDesc, NULL, &gpuTex);
+    gpuTexDesc.Usage = D3D11_USAGE_DEFAULT;
+
+    D3D11_TEXTURE2D_DESC gpuTexDescS;
+    ZeroMemory(&gpuTexDescS, sizeof(gpuTexDescS));
+    gpuTexDescS.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    gpuTexDescS.Width = descOt2D.Width; //need more dynamic resolution control for creating textures
+    gpuTexDescS.Height = descOt2D.Height;
+    gpuTexDescS.MipLevels = 1;
+    gpuTexDescS.ArraySize = 1;
+    gpuTexDescS.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    gpuTexDescS.SampleDesc.Count = 1;
+    gpuTexDescS.SampleDesc.Quality = 0;
+    gpuTexDescS.MiscFlags = 0;//D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+    gpuTexDescS.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    gpuTexDescS.Usage = D3D11_USAGE_DYNAMIC;
+    //
     
+
+    g_d3dDevice->CreateTexture2D(&gpuTexDesc, NULL, &gpuTex);
+    g_d3dDevice->CreateTexture2D(&gpuTexDescS, NULL, &gpuTexS);
+
     g_d3dDeviceContext->CopyResource(gpuTex, trash_memT);
+
+    g_d3dDeviceContext->CopyResource(gpuTexS, trash_memT);
+
+
+    
 
     //D3D11_UNORDERED_ACCESS_VIEW_DESC UAVOption;
     //UAVOption.Format = DXGI_FORMAT_R8G8B8A8_UNORM; //write only format - so texture view must be the reader
@@ -188,9 +219,18 @@ void loadTex(std::wstring filePath) {
 
     UAVdesc.Texture2D.MipSlice = 0;
     
+    D3D11_SHADER_RESOURCE_VIEW_DESC SRVdesc;
+    //DXGI_FORMAT_R32_TYPELESS
+    SRVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    SRVdesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    SRVdesc.Buffer.FirstElement = 0;
+    SRVdesc.Buffer.NumElements = 1;
+    SRVdesc.Texture2D.MostDetailedMip = 0;
+    SRVdesc.Texture2D.MipLevels = 1;
 
 
-    hr = g_d3dDevice->CreateShaderResourceView(trash_memT, NULL, &trash_memV); //seperate
+
+    hr = g_d3dDevice->CreateShaderResourceView(gpuTexS, &SRVdesc, &trash_memV); //seperate
     if (trash_memV == nullptr) {
         abort(); //crash if no memory loaded 
 
@@ -221,7 +261,7 @@ void loadTex(std::wstring filePath) {
 
     textureU.push_back(trash_memU); //unordered view
     textureV.push_back(trash_memV); //stock shader view linked to uordered view to reduce copying
-    textureT.push_back(trash_memT); //textureT memory hold data to ordered resource and unordered resource view
+    textureT.push_back(gpuTexS); //textureT memory hold data to ordered resource and unordered resource view
     textureTU.push_back(gpuTex);
 
     
@@ -1820,6 +1860,7 @@ void Render()
     and invoking the pixel shader program for each screen pixel which is affected by the rendered geometry.
     https://www.3dgep.com/introduction-to-directx-11/#Introduction  
     */
+    ID3D11ShaderResourceView* unbind3 = nullptr;
 
     g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
         g_d3dPixelShader,  // pointer to shader to bind
@@ -1836,7 +1877,7 @@ void Render()
 
     g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
-
+    
 ///
     /*
     g_d3dDeviceContext->GSSetShader(
@@ -1859,48 +1900,78 @@ void Render()
 
 
 
+    //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
 
     
     g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
-    //g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
-    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
+    g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], NULL); //change UAV alongside SRV
 
     g_d3dDeviceContext->Dispatch(
-        1,
-        1,
+        32,
+        32,
         1
     );
-
-    
 
     //textureU[0], textureV[0] <-- views of unordered and then ordered
     //COPY RESOURCES g_d3dDeviceContext->CopyResource();
     //textureU[0]->GetDesc() <- aquire shader resource struct
 
    // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
+    //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+
+
     
+//clean
     ID3D11ShaderResourceView* unbind1 = nullptr;
     ID3D11UnorderedAccessView* unbind2 = nullptr;
 
     g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
-    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0); //change UAV alongside SRV
+    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+    
+    g_d3dDeviceContext->Dispatch(
+        32,
+        32,
+        1
+    );
+    
 
-  
-    //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+  //https://docs.microsoft.com/en-us/windows/win32/direct3d11/how-to--use-dynamic-resources  <-- Map help
+    //g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, nullptr, textureTU[0], 1024, 1024);
+    
+    g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
 
+    
+   // D3D11_MAPPED_SUBRESOURCE mapStoU;
+   // ZeroMemory(&mapStoU, sizeof(mapStoU));
 
+    /*
+    g_d3dDeviceContext->Map(textureT[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &mapStoU);
+    
+    memcpy(mapStoU.pData, textureTU[0], sizeof(textureTU[0]));
 
+    g_d3dDeviceContext->Unmap(textureT[0], 0);
+    */
+    
 
     g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
     g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
         1, //view port count 
         &g_Viewport); //view port struct made previously
 
-    //Setup the Pixel Shader Stage
 
-    g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, 0, textureTU[0], 0, 0 );
-
+    /*
     /////////////Setup the Output Merger Stage
+    g_d3dDeviceContext->OMSetRenderTargetsAndUnorderedAccessViews(
+        1,
+        &g_d3dRenderTargetView,
+        g_d3dDepthStencilView,
+        1,
+        textureU.size(),
+        &textureU[0],
+        0
+    );
+  */
 
     g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
         1, //1 render target 
@@ -1916,7 +1987,7 @@ void Render()
         0,  //start index location
         0); //base vertex location
     
-    g_d3dDeviceContext->DrawAuto(); //for gs stream output
+  //  g_d3dDeviceContext->DrawAuto(); //for gs stream output
 
 
 
@@ -1997,6 +2068,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
     UnloadContent(); //clean muh trash up - heh heh heh - comedy gold
     Cleanup();
 
+    ExitProcess(NULL);
     return returnCode;
 }
 

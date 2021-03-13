@@ -1,13 +1,22 @@
+#define DIRECTIONAL_LIGHT 0
+#define POINT_LIGHT 1
+#define SPOT_LIGHT 2
+
+
 //need shader 4.0 NON dx9 is a requirment since dynamic indexing is used here
 Texture2D shaderTexture[100] : register(t0); //some to do's with registers to select textures...
 SamplerState SampleType : register(s0);
 
+
+
 struct PixelShaderInput //pixel shader input struct
 {
-    float4 position  : SV_POSITION;//take in color
+    float4 position : SV_POSITION; //assign color var first to apply color before vertex shifting
+    //float4 position : SV_POSITION; //assign vertex pos 
     float3 normal: NORMAL;
-    float2 tex : TEXCOORD;
+    float2 tex : TEXCOORD0; // I do not need normals to send to the SimplePixelShader for now, so... 
     uint texlink : TEXLINK;
+    float4 PositionWS : TEXCOORD1;
 };
 
 float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
@@ -16,7 +25,8 @@ float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
 //    IN.color = float4(100,50,30,0);
     //OUT.color = float4(0, 1.0f, 0, 1.0f);
 
-    float3 lightDirection = normalize(float3(1, -1, 0));
+
+    float3 lightDirection = normalize(float3(0, 0.5, 0));
 
     float4 textureColor;
 
@@ -43,7 +53,7 @@ float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
 
 
 
-    float lightMagnitude = 0.8f * saturate(dot(IN.normal, -lightDirection)) - 0.2f;
+    float lightMagnitude = 5.0f * saturate(dot(IN.normal, - lightDirection)) - 0.1f;
 
-    return textureColor; //return unchanged color since I am not doing the light shader yet*
+    return textureColor;//*lightMagnitude; //* lightMagnitude; //return unchanged color since I am not doing the light shader yet*
 }

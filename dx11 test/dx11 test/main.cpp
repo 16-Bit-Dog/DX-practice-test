@@ -62,6 +62,9 @@ ID3D11InputLayout* g_d3dInputLayout; // order and type of data that vertex shade
 ID3D11Buffer* g_d3dVertexBuffer;
 std::vector<ID3D11Buffer*> g_d3dVertexBufferV; //store vertex data - color vertex
 
+std::vector<ID3D11UnorderedAccessView*> VbUAV;
+std::vector<ID3D11Buffer*> g_d3dVertexBufferVU; //store vertex data - color vertex
+
 
 ID3D11Buffer* g_d3dIndexBuffer; // store index list - list of indices into the vertex buffer
 std::vector<ID3D11Buffer*> g_d3dIndexBufferV;
@@ -71,7 +74,7 @@ ID3D11VertexShader* g_d3dVertexShader = nullptr; //vertex shader info - I am ver
 ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
 ID3D11GeometryShader* g_d3dGeometryShader = nullptr;
 ID3D11ComputeShader* g_d3dComputeShader = nullptr;
-
+ID3D11ComputeShader* g_d3dComputeShaderSmooth = nullptr;
 //buffer objects to hold/store data below
 ///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
 
@@ -326,7 +329,7 @@ XMMATRIX g_ProjectionMatrix; //store projection matrix of camrea; transform obje
 //std::vector<VertexPosColor> g_Vertices;
 
 
-std::vector<VertexPosColor> g_Vertices; /*=
+std::vector<std::vector<VertexPosColor>> g_Vertices; /*=
 {
     { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0 - indices, first is position, second is color
     { XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
@@ -339,11 +342,8 @@ std::vector<VertexPosColor> g_Vertices; /*=
 };
 */
 
-//std::vector<UINT> g_Indicies; //texCoord
 
-std::vector<XMFLOAT2> g_Normal; //texCoord
-
-std::vector<UINT> g_Indicies; /*= //orginisation of indices to fomulate cube
+std::vector< std::vector<UINT> > g_Indicies; /*= //orginisation of indices to fomulate cube
 {
     0, 1, 2, 0, 2, 3,
     4, 6, 5, 4, 7, 6,
@@ -400,6 +400,8 @@ std::string GetLatestProfileBasic()
 void loadModel(std::string path) {
     //g_Vertices
     //VertexPosColor
+    
+    
 
     tinyobj::attrib_t attrib;// clear these values each read by reinitializing because I don't know if free and such works/how they work for these - rather do this for now since dead memory is a non-issue if it happens to exist 
     std::vector<tinyobj::shape_t> shapes;
@@ -410,10 +412,14 @@ void loadModel(std::string path) {
         throw std::runtime_error(warn + err);
     }
 
-
-    //XMFLOAT2 tmpa;
+    std::vector<UINT> tIndice;
+    g_Indicies.push_back(tIndice);
+    
+        //XMFLOAT2 tmpa;
+    std::vector<VertexPosColor> tmpVV;
     VertexPosColor tmpV;
-
+    g_Vertices.push_back(tmpVV);
+        
     int i = 0;
 
     std::map<std::tuple<float, float, float>, int> b;
@@ -443,15 +449,16 @@ void loadModel(std::string path) {
             };
             */
             tmpV.Normal = {
-
-                attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
-                attrib.normals[3 * index.vertex_index + 1],
-                attrib.normals[3 * index.vertex_index + 2]
+                0,0,0
+                //attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                //attrib.normals[3 * index.vertex_index + 1],
+                //attrib.normals[3 * index.vertex_index + 1]
                 //attrib.normals[3 * index.vertex_index + 2] // move color pos
 
             };
 
             tmpV.TexLink = textureV.size();
+
             // count number of times a value appears in verticies array to make sure that it does not appear twice in the end result
             //uniqueVertices[tmpb] = static_cast<uint32_t>(g_Vertices.size());
 
@@ -464,11 +471,11 @@ void loadModel(std::string path) {
 
 
             if (b.count((std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z))) == 0) { //filter out duplicate verticies
-                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices.size();
-                g_Vertices.push_back(tmpV);
+                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices[g_Vertices.size()-1].size();
+                g_Vertices[g_Vertices.size() - 1].push_back(tmpV);
                 //i++;
             }
-            g_Indicies.push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
+            g_Indicies[g_Indicies.size()-1].push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
 
             //g_Vertices.push_back(tmpV);
 
@@ -593,40 +600,76 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 void dupModelA() { //dup last gotten model
     
     //I am being very verbose here non purpose, rather than reusing a function I want control
-
+    
     loadModel("./model/2.obj");
     loadTex(L"./tex/2.png");
     
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
     ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
-    vertexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
+    vertexBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
-    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices.size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
-    vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE; // 0 means no CPU acsess
 
-    vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+    vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC; //resource flag - 0 means none
     vertexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+    
 
     D3D11_SUBRESOURCE_DATA resourceData; //data for buffer
     ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-    resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size()-1][0]; //Vertex data for sub source
 
     g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
     
     g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
 
+    D3D11_BUFFER_DESC a;
+    g_d3dVertexBuffer->GetDesc(&a);
+
+    ID3D11Buffer* tmpVertex;
+
+    D3D11_BUFFER_DESC vertexBufferDescU; //describe buffer we will make
+    ZeroMemory(&vertexBufferDescU, sizeof(D3D11_BUFFER_DESC));
+
+    vertexBufferDescU.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE; //how to bind buffer 
+
+    vertexBufferDescU.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDescU.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ; // 0 means no CPU acsess
+
+    vertexBufferDescU.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+
+    vertexBufferDescU.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+
+    
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size()-1][0]; //Vertex data pos for sub source - use Position?
+
+    g_d3dDevice->CreateBuffer(&vertexBufferDescU, &resourceData, &tmpVertex); //create buffer, only of vertex to modify and copy region back [taking front allows me to copy to 0,0 coord of data]
+    ID3D11UnorderedAccessView* tmpUAV;
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
+    //DXGI_FORMAT_R32_TYPELESS
+    UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    UAVdesc.Buffer.FirstElement = 0;
+    UAVdesc.Buffer.NumElements = 1;
+
+    g_d3dDevice->CreateUnorderedAccessView(tmpVertex, &UAVdesc, &tmpUAV);
+
+
+    VbUAV.push_back(tmpUAV);
+    g_d3dVertexBufferVU.push_back(tmpVertex);
 
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
     indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
-    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size()-1].size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
     indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 
-    resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
+    resourceData.pSysMem = &g_Indicies[g_Indicies.size()-1][0]; //indice data for sub source
 
     g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
 
@@ -1454,7 +1497,7 @@ bool LoadContent()
     */
 
 
-    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices.size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
     vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
 
     /*
@@ -1506,7 +1549,7 @@ bool LoadContent()
     */
     
     //const VertexPosColor* tmpV = ;
-    resourceData.pSysMem = &g_Vertices[0]; //Vertex data for sub source
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size() - 1][0]; //Vertex data for sub source
 
     HRESULT hr = g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
     if (FAILED(hr))
@@ -1515,21 +1558,41 @@ bool LoadContent()
     }
 
     g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
-    //////////////////////////////
 
+    ID3D11Buffer* tmpVertex;
+
+    g_d3dDevice->CreateBuffer(&vertexBufferDesc, NULL, &tmpVertex); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
+
+    g_d3dDeviceContext->CopyResource(tmpVertex, g_d3dVertexBuffer);
+
+
+    ID3D11UnorderedAccessView* tmpUAV;
+
+    D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
+    //DXGI_FORMAT_R32_TYPELESS
+    UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+    UAVdesc.Buffer.FirstElement = 0;
+    UAVdesc.Buffer.NumElements = 1;
+
+    g_d3dDevice->CreateUnorderedAccessView(tmpVertex, &UAVdesc, &tmpUAV);
+
+
+    VbUAV.push_back(tmpUAV);
+    g_d3dVertexBufferVU.push_back(tmpVertex);
     
     // Create and initialize the index buffer.
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
     indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
-    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies.size());
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size()-1].size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
     indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
     
-    resourceData.pSysMem = &g_Indicies[0]; //indice data for sub source
+    resourceData.pSysMem = &g_Indicies[g_Indicies.size()-1][0]; //indice data for sub source
 
     hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
     if (FAILED(hr))
@@ -1588,6 +1651,9 @@ bool LoadContent()
     g_d3dPixelShader = LoadShader<ID3D11PixelShader>(L"./SimplePixelShader.hlsl", "SimplePixelShader", "latest"); //load shader hlsl file named as object SimplePixelShader
     g_d3dGeometryShader = LoadShader<ID3D11GeometryShader>(L"./SimpleGeometryShader.hlsl", "SimpleGeometryShader", "latest"); //load shader hlsl file named as object SimplePixelShader
     g_d3dComputeShader = LoadShader<ID3D11ComputeShader>(L"./SimpleComputeShader.hlsl", "SimpleComputeShader", "latest");
+
+    g_d3dComputeShaderSmooth = LoadShader<ID3D11ComputeShader>(L"./SmoothMotionCompute.hlsl", "SmoothMotionCompute", "latest");
+
 
     // load Geometry Shader ^
 
@@ -1810,9 +1876,9 @@ void Render()
     const UINT vertexStride = sizeof(VertexPosColor); //
     const UINT offset = 0; //
 
-    
+    for (int i = 0; i < g_d3dVertexBufferV.size(); i++) {
 
-    for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        // for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
         g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
             0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
             1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
@@ -1826,7 +1892,7 @@ void Render()
             &g_d3dVertexBufferV[i], //pointer to array of vertex buffers [may not be array too]
             &vertexStride,  //ponter to array of stride values for each buffer
             &offset); //offset for each buffer in vertex buffer array
-    }
+   // }
 
 
 
@@ -1834,184 +1900,238 @@ void Render()
 
     //g_d3dDeviceContext->Unmap(g_d3dVertexBuffer, 0);
 
-    g_d3dDeviceContext->IASetInputLayout(
-        g_d3dInputLayout);  //set input layout
-    
-    for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        g_d3dDeviceContext->IASetInputLayout(
+            g_d3dInputLayout);  //set input layout
+
+        //for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
         g_d3dDeviceContext->IASetIndexBuffer(
             g_d3dIndexBufferV[i], //index buffer array pointer
             DXGI_FORMAT_R16_UINT, //format of DXGI format
             0); //offset
-    }
+    //}
 
-    g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
-
-
-
-    /////////Setup the Vertex Shader Stage
+        g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 
 
 
-    g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
-        g_d3dVertexShader, //pointer to shader to bind
-        nullptr, //array of class instance - can be disabled
-        0); //num of class instance above
+        /////////Setup the Vertex Shader Stage
 
 
-    
 
-    g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
-        0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
-        4, //number of buffers - obejct, frame, and application buffers
-        g_d3dConstantBuffers); //arra of const buffer is given to device
+        g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
+            g_d3dVertexShader, //pointer to shader to bind
+            nullptr, //array of class instance - can be disabled
+            0); //num of class instance above
 
-    //setup compute shader:
- //   for (int i = 0; i < g_d3dComputeShader.size(); i++) {
 
-    // Disable Compute Shader left over garbage from test build that I lazily removed to get a working proj
 
-    ///////////Setup the Rasterizer Stage
-    /*
-    
-    After the vertex shader stage but before the pixel shader stage comes the 
-    rasterizer stage. The rasterizer stage is responsible 
-    for interpolating the various vertex attributes output from the vertex shader 
-    and invoking the pixel shader program for each screen pixel which is affected by the rendered geometry.
-    https://www.3dgep.com/introduction-to-directx-11/#Introduction  
-    */
-    ID3D11ShaderResourceView* unbind3 = nullptr;
 
-    g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
-        g_d3dPixelShader,  // pointer to shader to bind
-        nullptr, //array of class instance - can be disabled
-        0); //number of instance
+        g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
+            0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
+            4, //number of buffers - obejct, frame, and application buffers
+            g_d3dConstantBuffers); //arra of const buffer is given to device
 
-    for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
-        g_d3dDeviceContext->PSSetShaderResources(0+x, 1, &textureV[x]);
+        //setup compute shader:
+     //   for (int i = 0; i < g_d3dComputeShader.size(); i++) {
+
+        // Disable Compute Shader left over garbage from test build that I lazily removed to get a working proj
+
+        ///////////Setup the Rasterizer Stage
+        /*
+
+        After the vertex shader stage but before the pixel shader stage comes the
+        rasterizer stage. The rasterizer stage is responsible
+        for interpolating the various vertex attributes output from the vertex shader
+        and invoking the pixel shader program for each screen pixel which is affected by the rendered geometry.
+        https://www.3dgep.com/introduction-to-directx-11/#Introduction
+        */
+        ID3D11ShaderResourceView* unbind3 = nullptr;
+
+        g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
+            g_d3dPixelShader,  // pointer to shader to bind
+            nullptr, //array of class instance - can be disabled
+            0); //number of instance
         
-        //textureV[i]->GetDesc();
-//        g_d3dDeviceContext->PSSetSamplers(0, 1, );
-        //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
+            for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
+                g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
+
+                //textureV[i]->GetDesc();
+        //        g_d3dDeviceContext->PSSetSamplers(0, 1, );
+                //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
+            }
+
+            g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
+        
+
+    ///
+        /*
+        g_d3dDeviceContext->GSSetShader(
+            g_d3dGeometryShader,
+            nullptr,
+            0
+        );// geo after v
+        */
+        /*
+        g_d3dDeviceContext->GSSetShaderResources(
+            1,
+            0,
+            nullptr//&textureV[1] //<-- put another buffer here to test?
+        );*/
+
+
+
+
+
+
+
+
+        //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
+            if (i == 0) {
+
+                g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
+                g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+                g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
+                g_d3dDeviceContext->CSSetConstantBuffers(0, 4, g_d3dConstantBuffers);
+
+                g_d3dDeviceContext->Dispatch(
+                    32,
+                    32,
+                    1
+                );
+
+                //textureU[0], textureV[0] <-- views of unordered and then ordered
+                //COPY RESOURCES g_d3dDeviceContext->CopyResource();
+                //textureU[0]->GetDesc() <- aquire shader resource struct
+
+               // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
+                //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+            }
+                ID3D11ShaderResourceView* unbind1 = nullptr;
+                ID3D11UnorderedAccessView* unbind2 = nullptr;
+                if (i == 0) {
+                    g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
+                    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+
+                    g_d3dDeviceContext->Dispatch(
+                        32,
+                        32,
+                        1
+                    );
+                }
+        
+        if (textureV.size() > 1 && i == 1) {
+            g_d3dDeviceContext->CSSetShader(g_d3dComputeShaderSmooth, nullptr, 0);
+            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &VbUAV[1], 0); //change UAV alongside SRV
+
+            g_d3dDeviceContext->Dispatch(
+                32, 32, 1
+            );
+
+            //D3D11_BUFFER_DESC tmpBufferDesc;
+            //g_d3dVertexBufferV[1]->GetDesc(&tmpBufferDesc);
+
+
+
+    //g_d3dDeviceContext->UpdateSubresource(g_d3dVertexBufferV[1], 0, nullptr, &g_d3dVertexBufferVU[1], tmpBufferDesc.ByteWidth, tmpBufferDesc.StructureByteStride);
+
+            g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
+            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+
+            g_d3dDeviceContext->Dispatch(
+                32,
+                32,
+                1
+            );
+            //g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
+            g_d3dDeviceContext->CopySubresourceRegion(g_d3dVertexBufferV[1], 0, 0, 0, 0, g_d3dVertexBufferVU[1], 0, 0);
+        }
+
+
+
+
+
+
+        //https://docs.microsoft.com/en-us/windows/win32/direct3d11/how-to--use-dynamic-resources  <-- Map help
+          //g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, nullptr, textureTU[0], 1024, 1024);
+        if (i == 0) {
+            g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+        }
+
+        // D3D11_MAPPED_SUBRESOURCE mapStoU;
+        // ZeroMemory(&mapStoU, sizeof(mapStoU));
+
+         /*
+         g_d3dDeviceContext->Map(textureT[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &mapStoU);
+
+         memcpy(mapStoU.pData, textureTU[0], sizeof(textureTU[0]));
+
+         g_d3dDeviceContext->Unmap(textureT[0], 0);
+         */
+
+
+        g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
+        g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
+            1, //view port count 
+            &g_Viewport); //view port struct made previously
+
+
+        /*
+        /////////////Setup the Output Merger Stage
+        g_d3dDeviceContext->OMSetRenderTargetsAndUnorderedAccessViews(
+            1,
+            &g_d3dRenderTargetView,
+            g_d3dDepthStencilView,
+            1,
+            textureU.size(),
+            &textureU[0],
+            0
+        );
+      */
+
+        g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
+            1, //1 render target 
+            &g_d3dRenderTargetView, //setup array of render view  - can be null
+            g_d3dDepthStencilView); //setup array of stencil view - can be null
+
+        g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
+
+        ////////////Draw The Cube
+
+
+        /*
+        std::vector<UINT> joined(gindiceCOUNT);
+
+        int iterator2 = 0;
+
+
+        for (int i = 0; i < g_Indicies.size(); i++) { //seperated instead of using transform to calculate for debugging purposes
+            for (int x = 0; x < g_Indicies[i].size(); x++) {
+                joined[iterator2] = g_Indicies[i][x];
+                iterator2 += 1;
+            }
+        }
+        */
+        g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
+            (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
+            0,  //start index location
+            0); //base vertex location
+
     }
-
-    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
-
-    
-///
     /*
-    g_d3dDeviceContext->GSSetShader(
-        g_d3dGeometryShader,
-        nullptr,
-        0
-    );// geo after v
-    */
-    /*
-    g_d3dDeviceContext->GSSetShaderResources(
-        1,
+    g_d3dDeviceContext->DrawIndexedInstanced(
+
+        gindiceCOUNT,
+        g_Indicies.size(),
         0,
-        nullptr//&textureV[1] //<-- put another buffer here to test?
-    );*/
-    
-
-
-
-
-
-
-
-    //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
-
-    
-    g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
-    g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
-    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], NULL); //change UAV alongside SRV
-    g_d3dDeviceContext->CSSetConstantBuffers(0, 4, g_d3dConstantBuffers);
-
-    g_d3dDeviceContext->Dispatch(
-        32,
-        32,
-        1
-    );
-
-    //textureU[0], textureV[0] <-- views of unordered and then ordered
-    //COPY RESOURCES g_d3dDeviceContext->CopyResource();
-    //textureU[0]->GetDesc() <- aquire shader resource struct
-
-   // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
-    //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
-
-
-    
-//clean
-    ID3D11ShaderResourceView* unbind1 = nullptr;
-    ID3D11UnorderedAccessView* unbind2 = nullptr;
-
-    g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
-    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
-    
-    g_d3dDeviceContext->Dispatch(
-        32,
-        32,
-        1
-    );
-    
-
-  //https://docs.microsoft.com/en-us/windows/win32/direct3d11/how-to--use-dynamic-resources  <-- Map help
-    //g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, nullptr, textureTU[0], 1024, 1024);
-    
-    g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
-
-    
-   // D3D11_MAPPED_SUBRESOURCE mapStoU;
-   // ZeroMemory(&mapStoU, sizeof(mapStoU));
-
-    /*
-    g_d3dDeviceContext->Map(textureT[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &mapStoU);
-    
-    memcpy(mapStoU.pData, textureTU[0], sizeof(textureTU[0]));
-
-    g_d3dDeviceContext->Unmap(textureT[0], 0);
-    */
-    
-
-    g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
-    g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
-        1, //view port count 
-        &g_Viewport); //view port struct made previously
-
-
-    /*
-    /////////////Setup the Output Merger Stage
-    g_d3dDeviceContext->OMSetRenderTargetsAndUnorderedAccessViews(
-        1,
-        &g_d3dRenderTargetView,
-        g_d3dDepthStencilView,
-        1,
-        textureU.size(),
-        &textureU[0],
+        0,
         0
+
     );
-  */
+    */
+    //  g_d3dDeviceContext->DrawAuto(); //for gs stream output
 
-    g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
-        1, //1 render target 
-        &g_d3dRenderTargetView, //setup array of render view  - can be null
-        g_d3dDepthStencilView); //setup array of stencil view - can be null
-
-    g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
-
-    ////////////Draw The Cube
     
-    g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
-        (g_Indicies.size()*2), //indice count - yes, this was an issue that needed *2...  
-        0,  //start index location
-        0); //base vertex location
-    
-  //  g_d3dDeviceContext->DrawAuto(); //for gs stream output
-
-
-
     /*
     g_d3dDeviceContext->Draw( //draw indice+vertex
         g_Vertices.size(), //indice count
@@ -2038,6 +2158,7 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dPixelShader);
     SafeRelease(g_d3dGeometryShader);
     SafeRelease(g_d3dComputeShader);
+    SafeRelease(g_d3dComputeShaderSmooth);
     for (int i = 0; i < textureT.size(); i++) {
 
         SafeRelease(textureT[i]);

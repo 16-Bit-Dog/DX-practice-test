@@ -26,7 +26,7 @@ void SmoothMotionCompute(uint3 DispatchThreadID : SV_DispatchThreadID)
     uint index = DispatchThreadID.x * DispatchThreadID.y;
 
     if (index < 100) {
-        OutputBuffer[index].position = float3(0,0,0);
+        OutputBuffer[index].position = float3(sin(ConstantUnsortedTypes[0][0]), sin(ConstantUnsortedTypes[0][0]), sin(ConstantUnsortedTypes[0][0]));
     }
     OutputBuffer[index].normal = OutputBuffer[index].normal;
     OutputBuffer[index].tex = OutputBuffer[index].tex;

@@ -639,8 +639,8 @@ void dupModelA() { //dup last gotten model
 
     vertexBufferDescU.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
 
-    vertexBufferDescU.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-
+    vertexBufferDescU.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    vertexBufferDescU.StructureByteStride = sizeof(VertexPosColor);
     
     resourceData.pSysMem = &g_Vertices[g_Vertices.size()-1][0]; //Vertex data pos for sub source - use Position?
 
@@ -649,11 +649,11 @@ void dupModelA() { //dup last gotten model
 
     D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
     //DXGI_FORMAT_R32_TYPELESS
-    UAVdesc.Format = DXGI_FORMAT_R32_TYPELESS;
+    UAVdesc.Format = DXGI_FORMAT_UNKNOWN;
     UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
     UAVdesc.Buffer.FirstElement = 0;
-    UAVdesc.Buffer.NumElements = 1;
-    UAVdesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
+    UAVdesc.Buffer.NumElements = g_Vertices[g_Vertices.size() - 1].size();
+    UAVdesc.Buffer.Flags = 0;
 
     g_d3dDevice->CreateUnorderedAccessView(tmpVertex, &UAVdesc, &tmpUAV);
 

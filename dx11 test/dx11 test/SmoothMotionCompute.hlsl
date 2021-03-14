@@ -12,7 +12,7 @@ struct AppData //used as demonstration of data
     int texlink : TEXLINK; //4 bytes
 };
 
-RWByteAddressBuffer OutputBuffer : register(u0); //1 is the vertex buffer 
+RWStructuredBuffer < AppData > OutputBuffer : register(u0); //1 is the vertex buffer 
 
 cbuffer PerTime : register(b3) //const buffer - for stuff needed once per program life time - group shared for many thread concurrent acsess
 {
@@ -25,6 +25,13 @@ void SmoothMotionCompute(uint3 DispatchThreadID : SV_DispatchThreadID)
 {
     uint index = DispatchThreadID.x * DispatchThreadID.y;
 
+    if (index < 100) {
+        OutputBuffer[index].position = float3(0,0,0);
+    }
+    OutputBuffer[index].normal = OutputBuffer[index].normal;
+    OutputBuffer[index].tex = OutputBuffer[index].tex;
+    OutputBuffer[index].texlink = OutputBuffer[index].texlink;
+
 //    vertexC.position = float3(0.f, 0.f, 0.f);
 //    vertexC.normal = OutputBuffer[index].normal;
 //    vertexC.tex = OutputBuffer[index].tex;
@@ -32,7 +39,7 @@ void SmoothMotionCompute(uint3 DispatchThreadID : SV_DispatchThreadID)
 
 
 
-    uint i = (index * 36) - 36;
+  /*  uint i = (index * 36) - 36;
 
         float3 in_position = asfloat(OutputBuffer.Load3(i));
         float3 in_color = asfloat(OutputBuffer.Load3(i + 12));
@@ -63,7 +70,7 @@ void SmoothMotionCompute(uint3 DispatchThreadID : SV_DispatchThreadID)
     tmp[2] = 0.0f;
     tmp[3] = 0.0f;
     */
-
+    
     //float r = OutputBuffer[DispatchThreadID.xy].r + float(sin(ConstantUnsortedTypes[0][0]) / 100);
     //float g = OutputBuffer[DispatchThreadID.xy].g + float(sin(ConstantUnsortedTypes[0][0]) / 100);
     //float b = OutputBuffer[DispatchThreadID.xy].b;

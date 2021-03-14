@@ -649,10 +649,11 @@ void dupModelA() { //dup last gotten model
 
     D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
     //DXGI_FORMAT_R32_TYPELESS
-    UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    UAVdesc.Format = DXGI_FORMAT_R32_TYPELESS;
     UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
     UAVdesc.Buffer.FirstElement = 0;
     UAVdesc.Buffer.NumElements = 1;
+    UAVdesc.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
 
     g_d3dDevice->CreateUnorderedAccessView(tmpVertex, &UAVdesc, &tmpUAV);
 
@@ -2043,8 +2044,9 @@ void Render()
                 32,
                 1
             );
-            //g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
-            g_d3dDeviceContext->CopySubresourceRegion(g_d3dVertexBufferV[1], 0, 0, 0, 0, g_d3dVertexBufferVU[1], 0, 0);
+
+            g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
+        //    g_d3dDeviceContext->CopySubresourceRegion(g_d3dVertexBufferV[1], 0, 0, 0, 0, g_d3dVertexBufferVU[1], 0, 0);
         }
 
 

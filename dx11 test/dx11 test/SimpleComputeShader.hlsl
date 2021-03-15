@@ -11,8 +11,8 @@ cbuffer PerTime : register(b3) //const buffer - for stuff needed once per progra
 void SimpleComputeShader(uint3 DispatchThreadID : SV_DispatchThreadID)
 {
 
-    float r = OutputBuffer[DispatchThreadID.xy].r + float(sin(ConstantUnsortedTypes[0][0]) / 100);
-    float g = OutputBuffer[DispatchThreadID.xy].g + float(sin(ConstantUnsortedTypes[0][0]) / 100);
+    float r = OutputBuffer[DispatchThreadID.xy].r - float(sin(ConstantUnsortedTypes[0][0]) / 300);
+    float g = OutputBuffer[DispatchThreadID.xy].g + float(sin(ConstantUnsortedTypes[0][0]) / 300);
     float b = OutputBuffer[DispatchThreadID.xy].b;
     float w = OutputBuffer[DispatchThreadID.xy].w;
 

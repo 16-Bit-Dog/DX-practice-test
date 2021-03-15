@@ -1995,8 +1995,8 @@ void Render()
                 g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
                 g_d3dDeviceContext->CSSetConstantBuffers(0, 4, g_d3dConstantBuffers);
 
-                g_d3dDeviceContext->Dispatch(
-                    32,
+                g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
+                    32, // to make dynamic I can link this value to the GetDesc width*height of each item.
                     32,
                     1
                 );
@@ -2025,8 +2025,8 @@ void Render()
             g_d3dDeviceContext->CSSetShader(g_d3dComputeShaderSmooth, nullptr, 0);
             g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &VbUAV[1], 0); //change UAV alongside SRV
 
-            g_d3dDeviceContext->Dispatch(
-                32, 32, 1
+            g_d3dDeviceContext->Dispatch( //times to launch compute shader 
+                ceil(g_Vertices[1].size()/1024)+1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
             );
 
             //D3D11_BUFFER_DESC tmpBufferDesc;
@@ -2040,8 +2040,8 @@ void Render()
             g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
 
             g_d3dDeviceContext->Dispatch(
-                32,
-                32,
+                ceil(g_Vertices[1].size() / 1024)+1,
+                1,
                 1
             );
 

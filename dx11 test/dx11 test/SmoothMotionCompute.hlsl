@@ -27,9 +27,82 @@ void SmoothMotionCompute(uint ids : SV_DispatchThreadID)
 
     float3 posModData = OutputBuffer[id].position;
 
+    /*
+    * 
+    *move object - static all x, y, then z
+    * 
     float posModx = ((sin(ConstantUnsortedTypes[0][0]) / 100 + posModData[0]));
     float posMody = ((sin(ConstantUnsortedTypes[0][0]) / 100 + posModData[1]));
     float posModz = ((sin(ConstantUnsortedTypes[0][0]) / 100 + posModData[2]));
+    */
+    
+    float posModx = (posModData[0]);
+    float posMody = (posModData[1]);
+    float posModz = (posModData[2]);
+
+    //time to move every other vertex to simulate water - AN IMPORTANT THING TO KNOW IS THAT THE MODEL IS EVEN, so reminder is fine
+    if (id % 10 == 0) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 1800;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 2000;
+    }
+    else if (id % 10 == 1) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 1900;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 2100;
+    }
+
+    else if (id % 10 == 2) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 2100;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 2200;
+    }
+
+    else if (id % 10 == 3) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 2500;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 3000;
+    }
+
+    else if (id % 10 == 4) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 3000;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 3500;
+    }
+
+    else if (id % 10 == 5) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 3500;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 4000;
+    }
+
+    else if (id % 10 == 6) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 4000;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 5300;
+    }
+
+    else if (id % 10 == 7) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 4500;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 5500;
+    }
+
+    else if (id % 10 == 8) {
+        //posModx += sin();
+        posMody += sin(ConstantUnsortedTypes[0][0]) / 5700;
+
+        posModz += cos(ConstantUnsortedTypes[0][0]) / 5800;
+    }
+
 
     OutputBuffer[id].position = float3(posModx, posMody, posModz);
     OutputBuffer[id].normal = OutputBuffer[id].normal;

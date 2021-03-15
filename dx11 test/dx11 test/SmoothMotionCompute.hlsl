@@ -17,7 +17,6 @@ RWStructuredBuffer < AppData > OutputBuffer : register(u0); //1 is the vertex bu
 cbuffer PerTime : register(b3) //const buffer - for stuff needed once per program life time - group shared for many thread concurrent acsess
 {
     matrix ConstantUnsortedTypes; //random DATA
-    //[0][0] is time
 }
 
 [numthreads(1024, 1, 1)] //threads to launch inside compute shader
@@ -44,62 +43,62 @@ void SmoothMotionCompute(uint ids : SV_DispatchThreadID)
     if (id % 10 == 0) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 1800;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 1900;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 2000;
     }
     else if (id % 10 == 1) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 1900;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 1900;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 2100;
     }
 
     else if (id % 10 == 2) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 2100;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 2100;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 2200;
     }
 
     else if (id % 10 == 3) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 2500;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 2500;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 3000;
     }
 
     else if (id % 10 == 4) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 3000;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 3000;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 3500;
     }
 
     else if (id % 10 == 5) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 3500;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 3500;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 4000;
     }
 
     else if (id % 10 == 6) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 4000;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 4000;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 5300;
     }
 
     else if (id % 10 == 7) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 4500;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 4800;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 5500;
     }
 
     else if (id % 10 == 8) {
         //posModx += sin();
         posMody += sin(ConstantUnsortedTypes[0][0]) / 5700;
-
+        posModx += sin(ConstantUnsortedTypes[0][0]) / 5700;
         posModz += cos(ConstantUnsortedTypes[0][0]) / 5800;
     }
 

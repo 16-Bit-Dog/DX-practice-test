@@ -89,6 +89,22 @@ std::vector<ID3D11SamplerState*> sampler;
 
 XMFLOAT4X4 constUnsortType;
 
+
+/*
+struct Light //structure org:
+{
+    XMFLOAT3 dir;
+    float pad; // so this is the size of XMMATRIX
+    XMFLOAT4 ambient;
+    XMFLOAT4 diffuse;
+    XMFLOAT4 NULLtmp;
+};
+*/
+
+XMFLOAT4X4 lightSource1;
+
+
+
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
 float eyePosX = 0;
@@ -287,7 +303,9 @@ enum ConstantBuffer
     CB_Frame,
     CB_Object,
     CB_ConstUnsortType,
-    NumConstantBuffers
+    CB_lightSet1,
+    NumConstantBuffers,
+
 };
 
 ID3D11Buffer* g_d3dConstantBuffers[NumConstantBuffers];
@@ -397,7 +415,7 @@ std::string GetLatestProfileBasic()
     return "";
 }
 
-void loadModel(std::string path) {
+void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH NORMALS
     //g_Vertices
     //VertexPosColor
     
@@ -449,10 +467,10 @@ void loadModel(std::string path) {
             };
             */
             tmpV.Normal = {
-                0,0,0
-                //attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
-                //attrib.normals[3 * index.vertex_index + 1],
-                //attrib.normals[3 * index.vertex_index + 1]
+                //0,0,0
+                attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                attrib.normals[3 * index.vertex_index + 1],
+                attrib.normals[3 * index.vertex_index + 2]
                 //attrib.normals[3 * index.vertex_index + 2] // move color pos
 
             };
@@ -746,7 +764,52 @@ int Run()
             DWORD currentTime = timeGetTime();
             float deltaTime = (currentTime - previousTime) / 1000.0f;
 
+            //time rando
             constUnsortType.m[0][0] += float((currentTime - previousTime) / 1000.0f);
+            //rando indvididual globals below
+
+            constUnsortType.m[0][2] = 0;
+            constUnsortType.m[0][3] = 0;
+            constUnsortType.m[1][0] = 0;
+            constUnsortType.m[1][1] = 0;
+            constUnsortType.m[1][2] = 0;
+            constUnsortType.m[1][3] = 0;
+            constUnsortType.m[2][0] = 0;
+            constUnsortType.m[2][1] = 0;
+            constUnsortType.m[2][2] = 0;
+            constUnsortType.m[2][3] = 0;
+            constUnsortType.m[3][0] = 0;
+            constUnsortType.m[3][1] = 0;
+            constUnsortType.m[3][2] = 0;
+            constUnsortType.m[3][3] = 0;
+
+
+            //
+
+            // direction
+            lightSource1.m[0][0] = eyePosX; //x
+            lightSource1.m[0][1] = 1.f; // y
+            lightSource1.m[0][2] = eyePosZ; // z
+            lightSource1.m[0][3] = 1.f; //pad
+            //
+            //ambient
+            lightSource1.m[1][0] = 1.f;
+            lightSource1.m[1][1] = 0.f;
+            lightSource1.m[1][2] = 1.f;
+            lightSource1.m[1][3] = 0.f;
+            //
+            //diffuse
+            lightSource1.m[2][0] = 0.0f;
+            lightSource1.m[2][1] = 1.0f;
+            lightSource1.m[2][2] = 0.0f;
+            lightSource1.m[2][3] = 1.0f;
+            //
+            // padding for third values
+            lightSource1.m[3][0] = 0;
+            lightSource1.m[3][1] = 0;
+            lightSource1.m[3][2] = 0;
+            lightSource1.m[3][3] = 0;
+            //
 
             previousTime = currentTime;
             
@@ -1587,6 +1650,12 @@ bool LoadContent()
         return false;
     }
 
+    hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[CB_lightSet1]); //make const buffer for object 
+    if (FAILED(hr))
+    {
+        return false;
+    }
+
 
     // we have 3 buffers of the same so we can modify object space, frame, and application space all seperately
 
@@ -1774,6 +1843,13 @@ void Update(float deltaTime) //pass net time to pass to have a timer
     g_WorldMatrix = XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_ConstUnsortType], 0, nullptr, &tmp, 0, 0);
+
+    tmp = XMLoadFloat4x4(&lightSource1); //yes I redefine it
+
+    g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_lightSet1], 0, nullptr, &tmp, 0, 0);
+
+    
+
     modx = 0;
     mody = 0;
     modz = 0;
@@ -1879,7 +1955,7 @@ void Render()
 
         g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
             0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
-            4, //number of buffers - obejct, frame, and application buffers
+            5, //number of buffers - obejct, frame, and application buffers
             g_d3dConstantBuffers); //arra of const buffer is given to device
 
         //setup compute shader:
@@ -1902,7 +1978,12 @@ void Render()
             g_d3dPixelShader,  // pointer to shader to bind
             nullptr, //array of class instance - can be disabled
             0); //number of instance
-        
+
+        g_d3dDeviceContext->PSSetConstantBuffers( //pixel state to bind to shader state
+            0,  // pointer to shader to bind
+            5, //array of class instance - can be disabled
+            g_d3dConstantBuffers); //number of instance
+
             for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
                 g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
 
@@ -1942,7 +2023,7 @@ void Render()
                 g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
                 g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
                 g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
-                g_d3dDeviceContext->CSSetConstantBuffers(0, 4, g_d3dConstantBuffers);
+                g_d3dDeviceContext->CSSetConstantBuffers(0, 5, g_d3dConstantBuffers);
 
                 g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
                     32, // to make dynamic I can link this value to the GetDesc width*height of each item.
@@ -2102,6 +2183,7 @@ void UnloadContent() //clean up
     SafeRelease(g_d3dConstantBuffers[CB_Frame]);
     SafeRelease(g_d3dConstantBuffers[CB_Object]);
     SafeRelease(g_d3dConstantBuffers[CB_ConstUnsortType]);
+    SafeRelease(g_d3dConstantBuffers[CB_lightSet1]);
     SafeRelease(g_d3dIndexBuffer);
     SafeRelease(g_d3dVertexBuffer);
     SafeRelease(g_d3dInputLayout);

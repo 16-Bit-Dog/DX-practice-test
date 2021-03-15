@@ -1,12 +1,13 @@
-#define DIRECTIONAL_LIGHT 0
-#define POINT_LIGHT 1
-#define SPOT_LIGHT 2
 
 
 //need shader 4.0 NON dx9 is a requirment since dynamic indexing is used here
 Texture2D shaderTexture[100] : register(t0); //some to do's with registers to select textures...
 SamplerState SampleType : register(s0);
 
+cbuffer PerLight1 : register(b4) //const buffer - for stuff needed once per program life time
+{
+    matrix lightS1;
+};
 
 
 struct PixelShaderInput //pixel shader input struct
@@ -19,14 +20,12 @@ struct PixelShaderInput //pixel shader input struct
     float4 PositionWS : TEXCOORD1;
 };
 
-float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
-{
+float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET{
     //PixelShaderInput OUT;
 //    IN.color = float4(100,50,30,0);
     //OUT.color = float4(0, 1.0f, 0, 1.0f);
 
-
-    float3 lightDirection = normalize(float3(0, 0.5, 0));
+    float3 normals = normalize(IN.normal);
 
     float4 textureColor;
 
@@ -38,7 +37,7 @@ float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
         break;
     case 1:
 
-        textureColor = shaderTexture[1].Sample(SampleType, IN.tex); 
+        textureColor = shaderTexture[1].Sample(SampleType, IN.tex);
         break;
     case 2:
 
@@ -46,14 +45,20 @@ float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET
         break;
 
     default:
-        textureColor = shaderTexture[3].Sample(SampleType, IN.tex); 
+        textureColor = shaderTexture[3].Sample(SampleType, IN.tex);
         break;
 
     };
 
+    float3 finalColor;
+    finalColor = textureColor * lightS1[1];
+    //finalColor = textureColor * float4(lightS1[1][0], lightS1[1][1], lightS1[1][2], lightS1[1][3]);
+    finalColor += saturate(dot(float3(lightS1[0][0], lightS1[0][1], lightS1[0][2]), normals) * lightS1[2] * textureColor);
 
+    //return textureColor; //return lone color
 
-    float lightMagnitude = 5.0f * saturate(dot(IN.normal, - lightDirection)) - 0.1f;
+    finalColor[0] /= 1.2;
 
-    return textureColor;//*lightMagnitude; //* lightMagnitude; //return unchanged color since I am not doing the light shader yet*
+    return float4(finalColor, textureColor[3]); //color with light
+
 }

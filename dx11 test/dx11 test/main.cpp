@@ -107,31 +107,39 @@ XMFLOAT4X4 lightSource1;
 
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
-float eyePosX = 0;
-float eyePosY = 0;
-float eyePosZ = 1;
+XMVECTOR DefaultForward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+XMVECTOR DefaultRight = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+XMVECTOR camForward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+XMVECTOR camRight = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+XMVECTOR camUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+XMVECTOR camTarget = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 
-float modx = 0;
+XMMATRIX camRotationMatrix;
+XMMATRIX groundWorld;
 
-float mody = 0;
+XMVECTOR camPosition;
 
-float modz = 0;
+float moveLeftRight = 0.0f;
+float moveBackForward = 0.0f;
+
+float camYaw = 0.0f;
+float camPitch = 0.0f;
 
 void makeSampler() {
     assert(g_d3dDevice);
     ID3D11SamplerState* tmpSample = nullptr;
     D3D11_SAMPLER_DESC tmpSampleDesc;
 
-        tmpSampleDesc.Filter = D3D11_FILTER{ D3D11_FILTER_ANISOTROPIC };
-        tmpSampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
-        tmpSampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
-        tmpSampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
-        tmpSampleDesc.MipLODBias = 0;
-        tmpSampleDesc.MaxAnisotropy = 8;
-        tmpSampleDesc.ComparisonFunc = D3D11_COMPARISON_FUNC{ D3D11_COMPARISON_LESS };
+    tmpSampleDesc.Filter = D3D11_FILTER{ D3D11_FILTER_ANISOTROPIC };
+    tmpSampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+    tmpSampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+    tmpSampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_MODE{ D3D11_TEXTURE_ADDRESS_WRAP };
+    tmpSampleDesc.MipLODBias = 0;
+    tmpSampleDesc.MaxAnisotropy = 8;
+    tmpSampleDesc.ComparisonFunc = D3D11_COMPARISON_FUNC{ D3D11_COMPARISON_LESS };
     //tmpSampleDesc.BorderColor[0] =
-        tmpSampleDesc.MinLOD = 1;
-        tmpSampleDesc.MaxLOD = D3D11_FLOAT32_MAX;
+    tmpSampleDesc.MinLOD = 1;
+    tmpSampleDesc.MaxLOD = D3D11_FLOAT32_MAX;
 
     g_d3dDevice->CreateSamplerState(&tmpSampleDesc, &tmpSample);
 
@@ -140,23 +148,23 @@ void makeSampler() {
 
 void loadTex(std::wstring filePath) {
     //get usable shader feature level - YES I am running this everytime a texture is loaded, for now I may do some funny GPU stuff as a test, and I don't think the shader levels are equally supported among the gpu's I will swap with
-    
+
     assert(g_d3dDevice);
     assert(g_d3dDeviceContext);
-    
+
     ID3D11ShaderResourceView* trash_memV = nullptr; //fine to have a tmp
     ID3D11Resource* trash_memT = nullptr;
     ID3D11UnorderedAccessView* trash_memU = nullptr;
 
 
-  //  std::vector<ID3D11ShaderResourceView*>& vecRefV = *textureV;
-  //  std::vector<ID3D11Resource*>& vecRefT = *textureT; // I will let this get auto cleaned, really does not matter - derefrence to vector is cheap, so I'm not bothered to do this
+    //  std::vector<ID3D11ShaderResourceView*>& vecRefV = *textureV;
+    //  std::vector<ID3D11Resource*>& vecRefT = *textureT; // I will let this get auto cleaned, really does not matter - derefrence to vector is cheap, so I'm not bothered to do this
 
-    volatile auto hr = CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, nullptr, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ,NULL,NULL,NULL,NULL, NULL), NULL)); //may need to change my size aquiring
+    volatile auto hr = CreateWICTextureFromFile(g_d3dDevice, g_d3dDeviceContext, filePath.c_str(), &trash_memT, nullptr, GetFileSize(CreateFileA(LPCSTR(filePath.c_str()), GENERIC_READ, NULL, NULL, NULL, NULL, NULL), NULL)); //may need to change my size aquiring
     //I got the buffer resource since its cool for me to use
 
-    
-    
+
+
     //make unordered resource view alongSide non for now since I want to have ease of compute shader fun
 
     /* don't need
@@ -164,7 +172,7 @@ void loadTex(std::wstring filePath) {
     TexGeBufOp.FirstElement = 0;
     TexGeBufOp.NumElements = 1;
     TexGeBufOp.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
-    
+
 
     D3D11_TEX2D_UAV TexGeBufOp;
     TexGeBufOp.MipSlice = 0;
@@ -177,7 +185,7 @@ void loadTex(std::wstring filePath) {
 
     ID3D11Texture2D* pTI = 0;
     D3D11_TEXTURE2D_DESC descOt2D;
-   // volatile int asd = sizeof(trash_memT);
+    // volatile int asd = sizeof(trash_memT);
     trash_memT->QueryInterface< ID3D11Texture2D >(&pTI); //get texture directly from resource
     pTI->GetDesc(&descOt2D);
 
@@ -213,7 +221,7 @@ void loadTex(std::wstring filePath) {
     gpuTexDescS.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     gpuTexDescS.Usage = D3D11_USAGE_DYNAMIC;
     //
-    
+
 
     g_d3dDevice->CreateTexture2D(&gpuTexDesc, NULL, &gpuTex);
     g_d3dDevice->CreateTexture2D(&gpuTexDescS, NULL, &gpuTexS);
@@ -223,20 +231,20 @@ void loadTex(std::wstring filePath) {
     g_d3dDeviceContext->CopyResource(gpuTexS, trash_memT);
 
 
-    
+
 
     //D3D11_UNORDERED_ACCESS_VIEW_DESC UAVOption;
     //UAVOption.Format = DXGI_FORMAT_R8G8B8A8_UNORM; //write only format - so texture view must be the reader
     //UAVOption.ViewDimension = 
     D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
-   //DXGI_FORMAT_R32_TYPELESS
+    //DXGI_FORMAT_R32_TYPELESS
     UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
     UAVdesc.Buffer.FirstElement = 0;
     UAVdesc.Buffer.NumElements = 1;
 
     UAVdesc.Texture2D.MipSlice = 0;
-    
+
     D3D11_SHADER_RESOURCE_VIEW_DESC SRVdesc;
     //DXGI_FORMAT_R32_TYPELESS
     SRVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -255,7 +263,7 @@ void loadTex(std::wstring filePath) {
     }
 
     hr = g_d3dDevice->CreateUnorderedAccessView(gpuTex, &UAVdesc, &trash_memU);
-    
+
     if (trash_memU == nullptr) {
         abort(); //crash if no memory loaded 
     }
@@ -265,7 +273,7 @@ void loadTex(std::wstring filePath) {
     D3D11_BUFFER_SRV TexGeBuffS;
     TexGeBuffS.FirstElement = 0;
     TexGeBuffS.NumElements = 1;
-    
+
     //TexGeBufOp.Flags = D3D11_BUFFER_SRV_FLAG_RAW;
 
     D3D11_SHADER_RESOURCE_VIEW_DESC SAVOption;
@@ -282,16 +290,16 @@ void loadTex(std::wstring filePath) {
     textureT.push_back(gpuTexS); //textureT memory hold data to ordered resource and unordered resource view
     textureTU.push_back(gpuTex);
 
-    
+
 
 }
 
 /*
 
-constant buffer that stores the projection 
-matrix of the camera and 
-this shader variable only needs to be 
-updated when the camera’s 
+constant buffer that stores the projection
+matrix of the camera and
+this shader variable only needs to be
+updated when the camera’s
 projection matrix is modified
 
 */
@@ -315,20 +323,20 @@ ID3D11Buffer* g_d3dConstantBuffers[NumConstantBuffers];
 /*
 
 
-    Application: The application level constant buffer stores variables that rarely change. 
-    The contents of this constant buffer are being updated once during application startup 
-    and perhaps are not updated again. An example of an application level shader variable is 
-    the camera’s projection matrix. Usually the projection matrix is initialized once when the 
-    render window is created and only needs to be updated if the dimensions of the render window are changed 
+    Application: The application level constant buffer stores variables that rarely change.
+    The contents of this constant buffer are being updated once during application startup
+    and perhaps are not updated again. An example of an application level shader variable is
+    the camera’s projection matrix. Usually the projection matrix is initialized once when the
+    render window is created and only needs to be updated if the dimensions of the render window are changed
     (for example, if the window is resized).
-    
-    Frame: The frame level constant buffer stores variables that change each frame. An example of a frame level 
-    shader variable would be the camera’s view matrix which changes whenever the camera moves. This variable only 
-    needs to be updated once at the beginning of the render function and generally stays the same for all objects 
+
+    Frame: The frame level constant buffer stores variables that change each frame. An example of a frame level
+    shader variable would be the camera’s view matrix which changes whenever the camera moves. This variable only
+    needs to be updated once at the beginning of the render function and generally stays the same for all objects
     rendered that frame.
-    
-    Object: The object level constant buffer stores variables that are different for every object being rendered. 
-    An example of an object level shader variable is the object’s world matrix. Since each object in the scene 
+
+    Object: The object level constant buffer stores variables that are different for every object being rendered.
+    An example of an object level shader variable is the object’s world matrix. Since each object in the scene
     will probably have a different world matrix this shader variable needs to be updated for every separate draw call.
 
 
@@ -418,8 +426,8 @@ std::string GetLatestProfileBasic()
 void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH NORMALS
     //g_Vertices
     //VertexPosColor
-    
-    
+
+
 
     tinyobj::attrib_t attrib;// clear these values each read by reinitializing because I don't know if free and such works/how they work for these - rather do this for now since dead memory is a non-issue if it happens to exist 
     std::vector<tinyobj::shape_t> shapes;
@@ -432,12 +440,12 @@ void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH
 
     std::vector<UINT> tIndice;
     g_Indicies.push_back(tIndice);
-    
-        //XMFLOAT2 tmpa;
+
+    //XMFLOAT2 tmpa;
     std::vector<VertexPosColor> tmpVV;
     VertexPosColor tmpV;
     g_Vertices.push_back(tmpVV);
-        
+
     int i = 0;
 
     std::map<std::tuple<float, float, float>, int> b;
@@ -458,14 +466,14 @@ void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH
                 /*1.0f - */attrib.texcoords[2 * index.texcoord_index + 1]
             };
 
-/*            tmpV.Color = {
+            /*            tmpV.Color = {
 
-                attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
-                attrib.colors[3 * index.vertex_index + 1] ,
-                attrib.colors[3 * index.vertex_index + 2] // move color pos
+                            attrib.colors[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
+                            attrib.colors[3 * index.vertex_index + 1] ,
+                            attrib.colors[3 * index.vertex_index + 2] // move color pos
 
-            };
-            */
+                        };
+                        */
             tmpV.Normal = {
                 //0,0,0
                 attrib.normals[3 * index.vertex_index + 0], //since these are floats I multiply by 3?
@@ -489,11 +497,11 @@ void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH
 
 
             if (b.count((std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z))) == 0) { //filter out duplicate verticies
-                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices[g_Vertices.size()-1].size();
+                b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)] = g_Vertices[g_Vertices.size() - 1].size();
                 g_Vertices[g_Vertices.size() - 1].push_back(tmpV);
                 //i++;
             }
-            g_Indicies[g_Indicies.size()-1].push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
+            g_Indicies[g_Indicies.size() - 1].push_back(b[std::make_tuple(tmpV.Position.x, tmpV.Position.y, tmpV.Position.z)]);
 
             //g_Vertices.push_back(tmpV);
 
@@ -504,7 +512,7 @@ void loadModel(std::string path) { //I AM NOT CALCULATING VERTEX DECOUPLING WITH
     }
 
     // g_Indicies
-    
+
 }
 
 // Forward declarations.
@@ -543,7 +551,7 @@ int InitApplication(HINSTANCE hInstance, int cmdShow)
     {
         return -1;
     }
-//
+    //
 
 
     RECT windowRect = { 0, 0, g_WindowWidth, g_WindowHeight }; //client area 
@@ -616,30 +624,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
  */
 
 void dupModelA() { //dup last gotten model
-    
+
     //I am being very verbose here non purpose, rather than reusing a function I want control
-    
+
     loadModel("./model/2.obj");
     loadTex(L"./tex/2.png");
-    
+
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
     ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
     vertexBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
-    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size() - 1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
     vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE; // 0 means no CPU acsess
 
     vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC; //resource flag - 0 means none
     vertexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-    
+
 
     D3D11_SUBRESOURCE_DATA resourceData; //data for buffer
     ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-    resourceData.pSysMem = &g_Vertices[g_Vertices.size()-1][0]; //Vertex data for sub source
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size() - 1][0]; //Vertex data for sub source
 
     g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
-    
+
     g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
 
     D3D11_BUFFER_DESC a;
@@ -652,15 +660,15 @@ void dupModelA() { //dup last gotten model
 
     vertexBufferDescU.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE; //how to bind buffer 
 
-    vertexBufferDescU.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDescU.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size() - 1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
     vertexBufferDescU.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ; // 0 means no CPU acsess
 
     vertexBufferDescU.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
 
     vertexBufferDescU.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     vertexBufferDescU.StructureByteStride = sizeof(VertexPosColor);
-    
-    resourceData.pSysMem = &g_Vertices[g_Vertices.size()-1][0]; //Vertex data pos for sub source - use Position?
+
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size() - 1][0]; //Vertex data pos for sub source - use Position?
 
     g_d3dDevice->CreateBuffer(&vertexBufferDescU, &resourceData, &tmpVertex); //create buffer, only of vertex to modify and copy region back [taking front allows me to copy to 0,0 coord of data]
     ID3D11UnorderedAccessView* tmpUAV;
@@ -683,12 +691,12 @@ void dupModelA() { //dup last gotten model
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
     indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
-    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size()-1].size());
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size() - 1].size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
     indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 
-    resourceData.pSysMem = &g_Indicies[g_Indicies.size()-1][0]; //indice data for sub source
+    resourceData.pSysMem = &g_Indicies[g_Indicies.size() - 1][0]; //indice data for sub source
 
     g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
 
@@ -702,43 +710,55 @@ void dupModelA() { //dup last gotten model
 void keyInputAsync() { //launch and leave it forever running in a spin lock
 
     while (true) {
-        
+
         if (GetKeyState(VK_UP) & 0x8000) { //multipul keys can be pressed at once... do not care much
 
-            mody = 0.1;//up
-
+            //mody = 0.1;//up
+            moveBackForward += 0.0001;
         }
-        
+
         if (GetKeyState(VK_DOWN) & 0x8000) { //multipul keys can be pressed at once... do not care much
 
-            mody = -0.1;//up
-
+            //mody = -0.1;//up
+            moveBackForward -= 0.0001;
         }
 
         if (GetKeyState(VK_LEFT) & 0x8000) { //multipul keys can be pressed at once... do not care much
 
-            modx = -0.1;//up
-
+            //modx = -0.1;//up
+            moveLeftRight -= 0.0001;
         }
 
         if (GetKeyState(VK_RIGHT) & 0x8000) { //multipul keys can be pressed at once... do not care much
 
-            modx = 0.1;//up
+            
+            moveLeftRight += 0.0001;
+        }
+
+        if (GetKeyState(0x57) & 0x8000) { //multipul keys can be pressed at once... do not care much - w
+
+            //modz = -0.1;
+            camPitch -= 0.0001;
 
         }
 
-        if (GetKeyState(0x57) & 0x8000) { //multipul keys can be pressed at once... do not care much
+        if (GetKeyState(0x53) & 0x8000) { //multipul keys can be pressed at once... do not care much - s
 
-            modz = -0.1;//up
+            //modz = 0.1;//up
+            camPitch += 0.0001;
+        }
+
+        if (GetKeyState(0x44) & 0x8000) {
+
+            camYaw += 0.0001;
 
         }
 
-        if (GetKeyState(0x53) & 0x8000) { //multipul keys can be pressed at once... do not care much
+        if (GetKeyState(0x41) & 0x8000) {
 
-            modz = 0.1;//up
+            camYaw -= 0.0001;
 
         }
-
     }
 
 }
@@ -750,7 +770,7 @@ int Run()
     static DWORD previousTime = timeGetTime();
     static const float targetFramerate = 30.0f;
     static const float maxTimeStep = 1.0f / targetFramerate;
-    
+
     //OutputDebugStringA("a");
     while (msg.message != WM_QUIT)
     {
@@ -787,9 +807,9 @@ int Run()
             //
 
             // direction
-            lightSource1.m[0][0] = eyePosX; //x
+            lightSource1.m[0][0] = 0.f; //x
             lightSource1.m[0][1] = 1.f; // y
-            lightSource1.m[0][2] = eyePosZ; // z
+            lightSource1.m[0][2] = 2.f; // z
             lightSource1.m[0][3] = 1.f; //pad
             //
             //ambient
@@ -812,25 +832,25 @@ int Run()
             //
 
             previousTime = currentTime;
-            
+
 
             // Cap the delta time to the max time step (useful if your 
             // debugging and you don't want the deltaTime value to explode.
             deltaTime = std::min<float>(deltaTime, maxTimeStep);
 
             auto keyA = GetKeyState(0x4D);
-//            switch (GetMessage(&msg, g_WindowHandle,WM_KEYFIRST,WM_KEYLAST)) {
+            //            switch (GetMessage(&msg, g_WindowHandle,WM_KEYFIRST,WM_KEYLAST)) {
 
-  //              OutputDebugStringA("yeet\n");
+              //              OutputDebugStringA("yeet\n");
 
-                if (keyA && launchedOPAModel == FALSE) {
+            if (keyA && launchedOPAModel == FALSE) {
 
-                    dupModelA();
-                 //   keyA = FALSE;
-                    launchedOPAModel = TRUE;
-                }
+                dupModelA();
+                //   keyA = FALSE;
+                launchedOPAModel = TRUE;
+            }
 
-//            }
+            //            }
 
             Update(deltaTime);
             Render();
@@ -853,11 +873,11 @@ to do dx11:
 
     Create the device and swap chain,
 
-    ^^ setup the swap chain description. The swap chain description 
-    defines the size and number of render buffers that will 
-    be used by the swap chain. It also associates the window 
-    to the swap chain which determines where the final 
-    image will be presented. The swap chain description 
+    ^^ setup the swap chain description. The swap chain description
+    defines the size and number of render buffers that will
+    be used by the swap chain. It also associates the window
+    to the swap chain which determines where the final
+    image will be presented. The swap chain description
     also defines the quality of anti-aliasing
     */
 
@@ -884,24 +904,24 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     swapChainDesc.BufferDesc.Width = clientWidth; //width of window
     swapChainDesc.BufferDesc.Height = clientHeight; //height of window
     swapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; //buffer format of R G B A
-    
+
     //define exact refresh rate to be static
     DXGI_RATIONAL refreshRateStatic; // 0/1 means unlimited, no vsync/fps lock -- I made it 30 for my laptop battery when coding on the go --> for testing on my mx250 over rx480 [battery] as well
     refreshRateStatic.Numerator = 30;
     refreshRateStatic.Denominator = 1;
     //
-    
+
     swapChainDesc.BufferDesc.RefreshRate = refreshRateStatic; //refresh rate
 
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; //cpu access optio nfor back buffer:
     /*
-    
+
     DXGI_USAGE_BACK_BUFFER: its a back buffer...
 
     DXGI_USAGE_READ_ONLY: use surface or resource for only read
 
     DXGI_USAGE_RENDER_TARGET_OUTPUT: use surface or resource as an output render target
-    
+
     DXGI_USAGE_SHADER_INPUT: surface or resource as an input
 
     DXGI_USAGE_SHARED: share surface or resource
@@ -918,16 +938,16 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     //DXGI_SWAP_EFFECT_DISCARD --> present content of swap chain in order - keep buffer after ::Present is called
 
     swapChainDesc.Windowed = TRUE;
-    
+
     //swapChainDesc.Flags; //https://docs.microsoft.com/en-ca/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_chain_flag?redirectedfrom=MSDN <-- diffrent flags
     UINT createDeviceFlags = 0;
     //D3D11_CREATE_DEVICE_DEBUG is a debug layer to add extra checks
 //#if _DEBUG
-    createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG; 
-//#endif
+    createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG;
+    //#endif
 
-    // These are the feature levels that we will accept.
-    D3D_FEATURE_LEVEL featureLevels[] = 
+        // These are the feature levels that we will accept.
+    D3D_FEATURE_LEVEL featureLevels[] =
     {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
@@ -1007,9 +1027,9 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     depthStencilBufferDesc.Width = clientWidth; //resolution of texture in texels width
     depthStencilBufferDesc.Height = clientHeight; //resolution of texture in texels height
     depthStencilBufferDesc.MipLevels = 1; //1 means multisampled
-    
+
     ////multisampling parameters
-    depthStencilBufferDesc.SampleDesc.Count = 1; 
+    depthStencilBufferDesc.SampleDesc.Count = 1;
     depthStencilBufferDesc.SampleDesc.Quality = 0;
     ////
 
@@ -1022,7 +1042,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     D3D11_USAGE_DYNAMIC: GPU read, and cpu write - if updated every frame by cpu, it is good
 
     D3D11_USAGE_STAGING: resource that can be copied from cpu to gpu
-    
+
     */
 
     //Step 4: Create a texture for the depth-stencil buffer,
@@ -1031,14 +1051,14 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
         &depthStencilBufferDesc,  //pointer to 2d texture resource
         nullptr,  // sub data for 2d
         &g_d3dDepthStencilBuffer);  // output to stencil vuffer
-    
+
     if (FAILED(hr))
     {
         return -1;
     }
 
     //Step 5: Create a depth-stencil view from the depth-stencil buffer,
-    
+
     hr = g_d3dDevice->CreateDepthStencilView( //create depth stencil buffer view
         g_d3dDepthStencilBuffer,  // input depth stencil buffer
         nullptr, //input sub buffer - Pointer to a depth-stencil-view description --> 0 means mipmap 0 is used
@@ -1066,15 +1086,15 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     depthStencilStateDesc.DepthFunc = D3D11_COMPARISON_LESS; //depth data compairison or not -->  if the source data is less than the destination data (that is, the source data is closer to the eye), then the depth comparison passes --> render stuff
     depthStencilStateDesc.StencilEnable = FALSE; //stencil testing or not
     /*
-    
+
     UINT8 StencilReadMask: Identify a portion of the depth-stencil buffer for reading stencil data.
-    
+
     UINT8 StencilWriteMask: Identify a portion of the depth-stencil buffer for writing stencil data.
-    
+
     D3D11_DEPTH_STENCILOP_DESC FrontFace: Identify how to use the results of the depth test and the stencil test for pixels whose surface normal is facing towards the camera (see D3D11_DEPTH_STENCILOP_DESC).
-    
+
     D3D11_DEPTH_STENCILOP_DESC BackFace: Identify how to use the results of the depth test and the stencil test for pixels whose surface normal is facing away from the camera (see D3D11_DEPTH_STENCILOP_DESC).
-    
+
     */
 
 
@@ -1101,9 +1121,9 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     rasterizerDesc.DepthBias = 0; //added value to depth - as simulated depth
     rasterizerDesc.DepthBiasClamp = 0.0f; //max for depth
     rasterizerDesc.DepthClipEnable = TRUE; //clip based on distance of obj 
-    rasterizerDesc.FillMode = D3D11_FILL_SOLID; 
+    rasterizerDesc.FillMode = D3D11_FILL_SOLID;
     /*
-    
+
     D3D11_FILL_WIREFRAME: Draw lines connecting the vertices.
     D3D11_FILL_SOLID: Fill the triangles formed by the vertices.
 
@@ -1128,7 +1148,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     //Step 8: Initialize the Viewport
 
         // Initialize the viewport to occupy the entire client area
-    g_Viewport.Width = static_cast<float>(clientWidth); 
+    g_Viewport.Width = static_cast<float>(clientWidth);
     g_Viewport.Height = static_cast<float>(clientHeight);
     g_Viewport.TopLeftX = 0.0f;
     g_Viewport.TopLeftY = 0.0f;
@@ -1140,22 +1160,22 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 
 /*
 
-The vertex shader is responsible for transforming the incoming vertex position into clip-space 
-as required by the rasterizer stage 
+The vertex shader is responsible for transforming the incoming vertex position into clip-space
+as required by the rasterizer stage
 
-pixel shader is responsible for computing the final 
+pixel shader is responsible for computing the final
 pixel color from the interpolated vertex attributes
 
 */
 
-/*   -- https://www.3dgep.com/introduction-to-directx-11/#Introduction -- 
+/*   -- https://www.3dgep.com/introduction-to-directx-11/#Introduction --
 BASIC IDEA ON HOW SHADERS WORK:
 
-the vertex shader might declare an output variable called out_color 
-of type float4 which is associated to the COLOR semantic and the pixel 
-shader declares an input variable called in_color of type float4 which 
-is also associated to the COLOR semantic. This will cause the value of 
-the out_color variable declared in the vertex shader to be connected to 
+the vertex shader might declare an output variable called out_color
+of type float4 which is associated to the COLOR semantic and the pixel
+shader declares an input variable called in_color of type float4 which
+is also associated to the COLOR semantic. This will cause the value of
+the out_color variable declared in the vertex shader to be connected to
 the value of the in_color variable in the pixel shader.
 
 
@@ -1361,7 +1381,7 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
         { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         { "TEXLINK", 0, DXGI_FORMAT_R16_UINT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
-    
+
     auto hr = g_d3dDevice->CreateInputLayout( //make input layout - global change to input Layout
         vertexLayoutDesc, //vertex shader - input assembler data
         _countof(vertexLayoutDesc), //number of elements
@@ -1420,7 +1440,7 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 {
     volatile auto a = std::filesystem::exists("./SimpleComputeShader.hlsl"); //debug test; this is not real project for much else than test and fun
     OutputDebugStringW(fileName.c_str());
-    ID3DBlob* pShaderBlob = nullptr; 
+    ID3DBlob* pShaderBlob = nullptr;
     ID3DBlob* pErrorBlob = nullptr;
     ShaderClass* pShader = nullptr;
 
@@ -1429,7 +1449,7 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
     {
         profile = GetLatestProfile<ShaderClass>(); //get able shader profiles/settings
     }
-    
+
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 
 #if _DEBUG
@@ -1447,7 +1467,7 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
         &pShaderBlob,// pointer to output shader Blob - compiled stuff
         &pErrorBlob);// error to Blob 
 
-    if (FAILED(hr)) 
+    if (FAILED(hr))
     {
         if (pErrorBlob) // if no blob, we free all data related to this
         {
@@ -1458,7 +1478,7 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
             SafeRelease(pErrorBlob); //clear mem of error shader
         }
 
-    //    return false;
+        //    return false;
     }
 
     pShader = CreateShader<ShaderClass>(pShaderBlob, nullptr); // if no crash I can make a shader using shader blob 
@@ -1599,20 +1619,20 @@ bool LoadContent()
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
 
     indexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_INDEX_BUFFER; //type of buffer m8 - same logic as vertex
-    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size()-1].size());
+    indexBufferDesc.ByteWidth = sizeof(UINT) * (g_Indicies[g_Indicies.size() - 1].size());
     indexBufferDesc.CPUAccessFlags = 0;
     indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
     indexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-    
-    resourceData.pSysMem = &g_Indicies[g_Indicies.size()-1][0]; //indice data for sub source
+
+    resourceData.pSysMem = &g_Indicies[g_Indicies.size() - 1][0]; //indice data for sub source
 
     auto hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
     if (FAILED(hr))
     {
         return false;
     }
-    
+
     g_d3dIndexBufferV.push_back(g_d3dIndexBuffer);
     //////////////////////
 
@@ -1643,7 +1663,7 @@ bool LoadContent()
         return false;
     }
 
-    constantBufferDesc.ByteWidth = sizeof(float)*4; //size of float*4 to not crash, but for syntax candy I put float to notify me of what the value is
+    constantBufferDesc.ByteWidth = sizeof(float) * 4; //size of float*4 to not crash, but for syntax candy I put float to notify me of what the value is
     hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[CB_ConstUnsortType]); //make const buffer for object 
     if (FAILED(hr))
     {
@@ -1659,7 +1679,7 @@ bool LoadContent()
 
     // we have 3 buffers of the same so we can modify object space, frame, and application space all seperately
 
-    /*    
+    /*
 1.     Load and compile the shader at runtime.
 2.     Load a precompiled shader object.
 3.     Create a shader from a byte array.
@@ -1697,51 +1717,51 @@ bool LoadContent()
     }
      //compile at run time
 */
-    /*
-     ID3D11InputLayout - defines how vertex data is attached to input assembler --> creates input layout is needed first [ID3D11Device::CreateInputLayout]
-    
-    ------------------------------------------------------
+/*
+ ID3D11InputLayout - defines how vertex data is attached to input assembler --> creates input layout is needed first [ID3D11Device::CreateInputLayout]
 
-    const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs: An array of the input-assembler stage input 
-    data types; each type is described by an element 
-    description (see D3D11_INPUT_ELEMENT_DESC). This structure will be described in the next section.
-    
-    UINT NumElements: The number of input elements in the pInputElementDescs array.
-    
-    const void *pShaderBytecodeWithInputSignature: A pointer to the compiled shader. The compiled shader code 
-    contains a input signature which is validated against the array of elements.
-    
-    SIZE_T BytecodeLength: The size in bytes of the pShaderBytecodeWithInputSignature array.
-    
-    ID3D11InputLayout **ppInputLayout: A pointer to the input-layout object 
-    created (see ID3D11InputLayout).
-    
-    
-    D3D11_INPUT_ELEMENT_DESC: 
-    LPCSTR SemanticName: The HLSL semantic associated with this element in a shader input-signature.
-    
-    UINT SemanticIndex: The semantic index for the element. A semantic index modifies a semantic, with an integer index number. A semantic index is only needed in a case where there is more than one element with the same semantic.
-    
-    DXGI_FORMAT Format: The data type of the element data. See DXGI_FORMAT. For example, if the element describes a 4-component floating point vector, the Format flag would be set to DXGI_FORMAT_R32G32B32A32_FLOAT.
-    
-    UINT InputSlot: If using a single vertex buffer with interleaved vertex attributes then the input slot should always be 0. If using several packed vertex buffers where each vertex buffer contains the vertex data for a single vertex attribute, then the input slot is the index of the vertex buffer that is attached to the input assembler stage.
-    
-    UINT AlignedByteOffset: Offset (in bytes) between each element. Use D3D11_APPEND_ALIGNED_ELEMENT for convenience to define the current element directly after the previous one, including any packing if necessary.
-    
-    D3D11_INPUT_CLASSIFICATION InputSlotClass: Identifies the input data class for a single input slot. This member can have one of the following values [50]:
-            D3D11_INPUT_PER_VERTEX_DATA: Input data is per-vertex data.
-            D3D11_INPUT_PER_INSTANCE_DATA: Input data is per-instance data.
-    
+------------------------------------------------------
 
-    UINT InstanceDataStepRate: The number of instances to draw using the same per-instance data before advancing in the buffer by one element. This value must be 0 for an element that contains per-vertex data (the slot class is set to D3D11_INPUT_PER_VERTEX_DATA).
+const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs: An array of the input-assembler stage input
+data types; each type is described by an element
+description (see D3D11_INPUT_ELEMENT_DESC). This structure will be described in the next section.
 
-    
-    */
+UINT NumElements: The number of input elements in the pInputElementDescs array.
 
-    // Create the input layout for the vertex shader.
+const void *pShaderBytecodeWithInputSignature: A pointer to the compiled shader. The compiled shader code
+contains a input signature which is validated against the array of elements.
+
+SIZE_T BytecodeLength: The size in bytes of the pShaderBytecodeWithInputSignature array.
+
+ID3D11InputLayout **ppInputLayout: A pointer to the input-layout object
+created (see ID3D11InputLayout).
+
+
+D3D11_INPUT_ELEMENT_DESC:
+LPCSTR SemanticName: The HLSL semantic associated with this element in a shader input-signature.
+
+UINT SemanticIndex: The semantic index for the element. A semantic index modifies a semantic, with an integer index number. A semantic index is only needed in a case where there is more than one element with the same semantic.
+
+DXGI_FORMAT Format: The data type of the element data. See DXGI_FORMAT. For example, if the element describes a 4-component floating point vector, the Format flag would be set to DXGI_FORMAT_R32G32B32A32_FLOAT.
+
+UINT InputSlot: If using a single vertex buffer with interleaved vertex attributes then the input slot should always be 0. If using several packed vertex buffers where each vertex buffer contains the vertex data for a single vertex attribute, then the input slot is the index of the vertex buffer that is attached to the input assembler stage.
+
+UINT AlignedByteOffset: Offset (in bytes) between each element. Use D3D11_APPEND_ALIGNED_ELEMENT for convenience to define the current element directly after the previous one, including any packing if necessary.
+
+D3D11_INPUT_CLASSIFICATION InputSlotClass: Identifies the input data class for a single input slot. This member can have one of the following values [50]:
+        D3D11_INPUT_PER_VERTEX_DATA: Input data is per-vertex data.
+        D3D11_INPUT_PER_INSTANCE_DATA: Input data is per-instance data.
+
+
+UINT InstanceDataStepRate: The number of instances to draw using the same per-instance data before advancing in the buffer by one element. This value must be 0 for an element that contains per-vertex data (the slot class is set to D3D11_INPUT_PER_VERTEX_DATA).
+
+
+*/
+
+// Create the input layout for the vertex shader.
 /*    D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] =
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Position), D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above 
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Position), D3D11_INPUT_PER_VERTEX_DATA, 0 }, //  D3D11_INPUT_ELEMENT_DESC - vars is listed above
         { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
     };
 
@@ -1749,21 +1769,21 @@ bool LoadContent()
         vertexLayoutDesc, //vertex shader - input assembler data
         _countof(vertexLayoutDesc), //number of elements
         vertexShaderBlob->GetBufferPointer(),  //vertex shader buffer
-        vertexShaderBlob->GetBufferSize(), //vetex shader blob size 
+        vertexShaderBlob->GetBufferSize(), //vetex shader blob size
         &g_d3dInputLayout); //input layout
 
     if (FAILED(hr))
     {
-        return false; 
+        return false;
     }
     moved to when making shader directly
-    
+
     SafeRelease(vertexShaderBlob); //vertex buffer for our cube contains two attributes: vertex pos and color
     */
-    
+
 
     /////////////////
-    
+
         // Load the compiled pixel shader. -- equivlent but for pixel as for shader
    // ID3DBlob* pixelShaderBlob;
     /*
@@ -1787,7 +1807,7 @@ bool LoadContent()
 
     SafeRelease(pixelShaderBlob);
     */
-    
+
     //projection matrix:
 
     // Setup the projection matrix.
@@ -1814,23 +1834,34 @@ bool LoadContent()
 }
 
 //The Update Function
+void UpdateCam() {
+
+    camRotationMatrix = XMMatrixRotationRollPitchYaw(camPitch, camYaw, 0);
+    camTarget = XMVector3TransformCoord(DefaultForward, camRotationMatrix);
+    camTarget = XMVector3Normalize(camTarget);
+
+    XMMATRIX RotateYTempMatrix;
+    RotateYTempMatrix = XMMatrixRotationY(camYaw);
+
+    camRight = XMVector3TransformCoord(DefaultRight, RotateYTempMatrix);
+    camUp = XMVector3TransformCoord(camUp, RotateYTempMatrix);
+    camForward = XMVector3TransformCoord(DefaultForward, RotateYTempMatrix);
+
+    camPosition += moveLeftRight * camRight;
+    camPosition += moveBackForward * camForward;
+
+    moveLeftRight = 0.0f;
+    moveBackForward = 0.0f;
+
+    camTarget = camPosition + camTarget;
+
+    g_ViewMatrix = XMMatrixLookAtLH(camPosition, camTarget, camUp);
+}
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
+    UpdateCam();
 
-    eyePosX += modx;
-    eyePosY += mody;
-    eyePosZ += modz;
-
-    eyePosZ = abs(eyePosZ);
-
-    
-
-    XMVECTOR eyePosition = XMVectorSet(eyePosX, eyePosY, eyePosZ, 1); //eye pos
-    XMVECTOR eyeDirection = XMVectorSet(0, 1, 0, 0); // cam focus --> add trignometric functions to allow this focus to adjust with rotation of camrea - 
-    XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0); //dir up
-
-    g_ViewMatrix = XMMatrixLookAtLH(eyePosition, eyeDirection, upDirection); //matrix LH pos
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0); //update subresource data of constant buffer
 
 
@@ -1848,18 +1879,18 @@ void Update(float deltaTime) //pass net time to pass to have a timer
 
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_lightSet1], 0, nullptr, &tmp, 0, 0);
 
-    
 
-    modx = 0;
-    mody = 0;
-    modz = 0;
+
+    //modx = 0;
+    //mody = 0;
+    //modz = 0;
 
     if (constUnsortType.m[0][0] > 100000000) {
 
         constUnsortType.m[0][0] = 0;
 
     }
-}   
+}
 
 //clear old back-buffer
 // Clear the color and depth buffers.
@@ -1876,18 +1907,18 @@ void Present(bool vSync)
     if (vSync)
     {
         g_d3dSwapChain->Present(1, 0);
-/*
+        /*
 
-https://www.3dgep.com/introduction-to-directx-11/#Introduction
+        https://www.3dgep.com/introduction-to-directx-11/#Introduction
 
-^^^ ctrl f   -   UINT SyncInterval:
+        ^^^ ctrl f   -   UINT SyncInterval:
 
-*/
+        */
     }
     else
     {
         g_d3dSwapChain->Present(0, 0);
-    //options above
+        //options above
     }
 }
 
@@ -1984,79 +2015,79 @@ void Render()
             5, //array of class instance - can be disabled
             g_d3dConstantBuffers); //number of instance
 
-            for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
-                g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
+        for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
+            g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
 
-                //textureV[i]->GetDesc();
-        //        g_d3dDeviceContext->PSSetSamplers(0, 1, );
-                //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
-            }
+            //textureV[i]->GetDesc();
+    //        g_d3dDeviceContext->PSSetSamplers(0, 1, );
+            //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
+        }
 
-            g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
-        
-
-    ///
-        /*
-        g_d3dDeviceContext->GSSetShader(
-            g_d3dGeometryShader,
-            nullptr,
-            0
-        );// geo after v
-        */
-        /*
-        g_d3dDeviceContext->GSSetShaderResources(
-            1,
-            0,
-            nullptr//&textureV[1] //<-- put another buffer here to test?
-        );*/
+        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
 
+///
+    /*
+    g_d3dDeviceContext->GSSetShader(
+        g_d3dGeometryShader,
+        nullptr,
+        0
+    );// geo after v
+    */
+    /*
+    g_d3dDeviceContext->GSSetShaderResources(
+        1,
+        0,
+        nullptr//&textureV[1] //<-- put another buffer here to test?
+    );*/
 
 
 
 
 
 
-        //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
-            if (i == 0) {
 
-                g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
-                g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
-                g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
-                g_d3dDeviceContext->CSSetConstantBuffers(0, 5, g_d3dConstantBuffers);
 
-                g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
-                    32, // to make dynamic I can link this value to the GetDesc width*height of each item.
-                    32,
-                    1
-                );
+    //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
+        if (i == 0) {
 
-                //textureU[0], textureV[0] <-- views of unordered and then ordered
-                //COPY RESOURCES g_d3dDeviceContext->CopyResource();
-                //textureU[0]->GetDesc() <- aquire shader resource struct
+            g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
+            g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
+            g_d3dDeviceContext->CSSetConstantBuffers(0, 5, g_d3dConstantBuffers);
 
-               // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
-                //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
-            }
-                ID3D11ShaderResourceView* unbind1 = nullptr;
-                ID3D11UnorderedAccessView* unbind2 = nullptr;
-                if (i == 0) {
-                    g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
-                    g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+            g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
+                32, // to make dynamic I can link this value to the GetDesc width*height of each item.
+                32,
+                1
+            );
 
-                    g_d3dDeviceContext->Dispatch(
-                        32,
-                        32,
-                        1
-                    );
-                }
-        
+            //textureU[0], textureV[0] <-- views of unordered and then ordered
+            //COPY RESOURCES g_d3dDeviceContext->CopyResource();
+            //textureU[0]->GetDesc() <- aquire shader resource struct
+
+           // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
+            //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+        }
+        ID3D11ShaderResourceView* unbind1 = nullptr;
+        ID3D11UnorderedAccessView* unbind2 = nullptr;
+        if (i == 0) {
+            g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
+            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+
+            g_d3dDeviceContext->Dispatch(
+                32,
+                32,
+                1
+            );
+        }
+
         if (textureV.size() > 1 && i == 1) {
             g_d3dDeviceContext->CSSetShader(g_d3dComputeShaderSmooth, nullptr, 0);
             g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &VbUAV[1], 0); //change UAV alongside SRV
 
             g_d3dDeviceContext->Dispatch( //times to launch compute shader 
-                ceil(g_Vertices[1].size()/1024)+1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
+                ceil(g_Vertices[1].size() / 1024) + 1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
             );
 
             //D3D11_BUFFER_DESC tmpBufferDesc;
@@ -2070,7 +2101,7 @@ void Render()
             g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
 
             g_d3dDeviceContext->Dispatch(
-                ceil(g_Vertices[1].size() / 1024)+1,
+                ceil(g_Vertices[1].size() / 1024) + 1,
                 1,
                 1
             );
@@ -2163,7 +2194,7 @@ void Render()
     */
     //  g_d3dDeviceContext->DrawAuto(); //for gs stream output
 
-    
+
     /*
     g_d3dDeviceContext->Draw( //draw indice+vertex
         g_Vertices.size(), //indice count
@@ -2202,7 +2233,7 @@ void UnloadContent() //clean up
         SafeRelease(textureTU[i]);
 
     }
-    
+
     CoUninitialize();
 }
 
@@ -2246,7 +2277,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
 
     if (!LoadContent())
     {
-        MessageBox(nullptr, TEXT("Failed to load content."), TEXT("Error"), MB_OK); 
+        MessageBox(nullptr, TEXT("Failed to load content."), TEXT("Error"), MB_OK);
         return -1;
     }
 

@@ -1474,114 +1474,63 @@ bool LoadContent()
     loadTex(L"./tex/1.png");
     makeSampler();
 
-    // Create an initialize the vertex buffer.
     D3D11_BUFFER_DESC vertexBufferDesc; //describe buffer we will make
     ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
-    //vertexBufferDesc.StructureByteStride --- if you have a struct buffer --> done to be efficent with zero memory allocation, but this allows allocation by stride
+    vertexBufferDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
 
-    vertexBufferDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_VERTEX_BUFFER; //how to bind buffer 
+    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size() - 1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE; // 0 means no CPU acsess
 
-    /* type of buffer:
-    
-    D3D11_BIND_VERTEX_BUFFER,
-    D3D11_BIND_INDEX_BUFFER,
-    D3D11_BIND_CONSTANT_BUFFER,
-    D3D11_BIND_SHADER_RESOURCE,
-    D3D11_BIND_STREAM_OUTPUT,
-    D3D11_BIND_RENDER_TARGET,
-    D3D11_BIND_DEPTH_STENCIL,
-    D3D11_BIND_UNORDERED_ACCESS,
-    D3D11_BIND_DECODER,
-    D3D11_BIND_VIDEO_ENCODER
-    
-    */
-
-
-    vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size()-1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
-    vertexBufferDesc.CPUAccessFlags = 0; // 0 means no CPU acsess
-
-    /*
-    
-    D3D11_CPU_ACCESS_WRITE       obvioussly write allowed by cpu to buffer
-    D3D11_CPU_ACCESS_READ        obvioussly read allowed by cpu to buffer
-    ^^ could use 2 over 1
-    */
-
-    vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
-
+    vertexBufferDesc.Usage = D3D11_USAGE_DYNAMIC; //resource flag - 0 means none
     vertexBufferDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 
-    /*https://docs.microsoft.com/en-ca/windows/win32/api/d3d11/ne-d3d11-d3d11_resource_misc_flag?redirectedfrom=MSDN
-  D3D11_RESOURCE_MISC_GENERATE_MIPS,
-  D3D11_RESOURCE_MISC_SHARED,
-  D3D11_RESOURCE_MISC_TEXTURECUBE,
-  D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS,
-  D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS,
-  D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
-  D3D11_RESOURCE_MISC_RESOURCE_CLAMP,
-  D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX,
-  D3D11_RESOURCE_MISC_GDI_COMPATIBLE,
-  D3D11_RESOURCE_MISC_SHARED_NTHANDLE,
-  D3D11_RESOURCE_MISC_RESTRICTED_CONTENT,
-  D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE,
-  D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE_DRIVER,
-  D3D11_RESOURCE_MISC_GUARDED,
-  D3D11_RESOURCE_MISC_TILE_POOL,
-  D3D11_RESOURCE_MISC_TILED,
-  D3D11_RESOURCE_MISC_HW_PROTECTED
-
-  ^^ This is lots
-
-    
-    */
 
     D3D11_SUBRESOURCE_DATA resourceData; //data for buffer
     ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-    /*
-    
-    
-    const void *pSysMem: A pointer to the data to initialize the buffer with.
-
-    UINT SysMemPitch: The distance (in bytes) from the beginning of one line of a texture to the next line. System-memory pitch is used only for 2D and 3D texture data as it is has no meaning for the other resource types.
-
-    UINT SysMemSlicePitch: The distance (in bytes) from the beginning of one depth level to the next. System-memory-slice pitch is only used for 3D texture data as it has no meaning for the other resource types.
-
-    */
-    
-    //const VertexPosColor* tmpV = ;
     resourceData.pSysMem = &g_Vertices[g_Vertices.size() - 1][0]; //Vertex data for sub source
 
-    HRESULT hr = g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
-    if (FAILED(hr))
-    {
-        return false;
-    }
+    g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
 
     g_d3dVertexBufferV.push_back(g_d3dVertexBuffer);
 
+    D3D11_BUFFER_DESC a;
+    g_d3dVertexBuffer->GetDesc(&a);
+
     ID3D11Buffer* tmpVertex;
 
-    g_d3dDevice->CreateBuffer(&vertexBufferDesc, NULL, &tmpVertex); //create buffer, using data settings struct, struct of data, and vertex buffer output - this is also used to create other buffer styles
+    D3D11_BUFFER_DESC vertexBufferDescU; //describe buffer we will make
+    ZeroMemory(&vertexBufferDescU, sizeof(D3D11_BUFFER_DESC));
 
-    g_d3dDeviceContext->CopyResource(tmpVertex, g_d3dVertexBuffer);
+    vertexBufferDescU.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE; //how to bind buffer 
 
+    vertexBufferDescU.ByteWidth = sizeof(VertexPosColor) * (g_Vertices[g_Vertices.size() - 1].size()); //size of buffer --> make it the size of verticies*vertexPosColor [since vertex will have pos and color
+    vertexBufferDescU.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE | D3D11_CPU_ACCESS_READ; // 0 means no CPU acsess
 
+    vertexBufferDescU.Usage = D3D11_USAGE_DEFAULT; //resource flag - 0 means none
+
+    vertexBufferDescU.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    vertexBufferDescU.StructureByteStride = sizeof(VertexPosColor);
+
+    resourceData.pSysMem = &g_Vertices[g_Vertices.size() - 1][0]; //Vertex data pos for sub source - use Position?
+
+    g_d3dDevice->CreateBuffer(&vertexBufferDescU, &resourceData, &tmpVertex); //create buffer, only of vertex to modify and copy region back [taking front allows me to copy to 0,0 coord of data]
     ID3D11UnorderedAccessView* tmpUAV;
 
     D3D11_UNORDERED_ACCESS_VIEW_DESC UAVdesc;
     //DXGI_FORMAT_R32_TYPELESS
-    UAVdesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    UAVdesc.Format = DXGI_FORMAT_UNKNOWN;
     UAVdesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
     UAVdesc.Buffer.FirstElement = 0;
-    UAVdesc.Buffer.NumElements = 1;
+    UAVdesc.Buffer.NumElements = g_Vertices[g_Vertices.size() - 1].size();
+    UAVdesc.Buffer.Flags = 0;
 
     g_d3dDevice->CreateUnorderedAccessView(tmpVertex, &UAVdesc, &tmpUAV);
 
 
     VbUAV.push_back(tmpUAV);
     g_d3dVertexBufferVU.push_back(tmpVertex);
-    
+
     // Create and initialize the index buffer.
     D3D11_BUFFER_DESC indexBufferDesc; //buffer obj
     ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC)); //alloc
@@ -1595,7 +1544,7 @@ bool LoadContent()
     
     resourceData.pSysMem = &g_Indicies[g_Indicies.size()-1][0]; //indice data for sub source
 
-    hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
+    auto hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer); //make buffer
     if (FAILED(hr))
     {
         return false;

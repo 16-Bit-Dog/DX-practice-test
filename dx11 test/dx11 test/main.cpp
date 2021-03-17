@@ -8,8 +8,8 @@
 #include <WICTextureLoader.h> //https://github.com/microsoft/DirectXTK - used nuget to install the directX tool kit
 #include <conio.h>
 #include <future>
-
-
+#include <Gdiplus.h>
+#include "FW1FontWrapper.h" //nuget this
 
 HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
     ID3D11UnorderedAccessView** ppUAVOut);
@@ -101,9 +101,11 @@ struct Light //structure org:
 };
 */
 
+IFW1Factory* pFW1Factory;
+
+IFW1FontWrapper* pFontWrapper;
+
 XMFLOAT4X4 lightSource1;
-
-
 
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
@@ -1355,6 +1357,86 @@ std::string GetLatestProfile<ID3D11GeometryShader>()
     return "";
 }
 
+template<>
+std::string GetLatestProfile<ID3D11HullShader>()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //feature level to compile pixel shader 
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "hs_5_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "hs_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "hs_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3: //I don't think these exist below
+    {
+        return "hs_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "hs_4_0_level_9_1";
+    }
+    break;
+    }
+    return "";
+}
+
+template<>
+std::string GetLatestProfile<ID3D11DomainShader>()
+{
+    assert(g_d3dDevice);
+
+    // Query the current feature level:
+    D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //feature level to compile pixel shader 
+    switch (featureLevel)
+    {
+    case D3D_FEATURE_LEVEL_11_1:
+    case D3D_FEATURE_LEVEL_11_0:
+    {
+        return "ds_5_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_1:
+    {
+        return "ds_4_1";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_10_0:
+    {
+        return "ds_4_0";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_3: //I don't think these exist below
+    {
+        return "ds_4_0_level_9_3";
+    }
+    break;
+    case D3D_FEATURE_LEVEL_9_2:
+    case D3D_FEATURE_LEVEL_9_1:
+    {
+        return "ds_4_0_level_9_1";
+    }
+    break;
+    }
+    return "";
+}
+
 // --I can make special options for other shader types
 
 /*
@@ -1433,6 +1515,30 @@ ID3D11GeometryShader* CreateShader<ID3D11GeometryShader>(ID3DBlob* pShaderBlob, 
     g_d3dDevice->CreateGeometryShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pGeometryShader); //pixel shader version of the vertex shader above
 
     return pGeometryShader;
+}
+
+template<>
+ID3D11HullShader* CreateShader<ID3D11HullShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11HullShader* pHullShader = nullptr;
+    g_d3dDevice->CreateHullShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pHullShader); //pixel shader version of the vertex shader above
+
+    return pHullShader;
+}
+
+template<>
+ID3D11DomainShader* CreateShader<ID3D11DomainShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    ID3D11DomainShader* pDomainShader = nullptr;
+    g_d3dDevice->CreateDomainShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pDomainShader); //pixel shader version of the vertex shader above
+
+    return pDomainShader;
 }
 
 template< class ShaderClass >
@@ -1693,6 +1799,12 @@ bool LoadContent()
 
     g_d3dComputeShaderSmooth = LoadShader<ID3D11ComputeShader>(L"./SmoothMotionCompute.hlsl", "SmoothMotionCompute", "latest");
 
+    //TEXT
+    HRESULT hResult = FW1CreateFactory(FW1_VERSION, &pFW1Factory);
+
+    hResult = pFW1Factory->CreateFontWrapper(g_d3dDevice, L"Arial", &pFontWrapper);
+    //
+
 
     // load Geometry Shader ^
 
@@ -1833,6 +1945,39 @@ UINT InstanceDataStepRate: The number of instances to draw using the same per-in
     return true;
 }
 
+void drawManyText(const wchar_t* stringTmp, int x, int y) { //use before next func to preamble draw without the expensive swapchain flipper of FW1_RESTORESTATE
+    assert(g_d3dDevice);
+    assert(g_d3dDeviceContext);
+
+    pFontWrapper->DrawString(
+        g_d3dDeviceContext,
+        stringTmp,// String
+        28.0f,// Font size
+        x,// X position
+        y,// Y position
+        0xff049995,// Text color, white
+        FW1_RESTORESTATE// Flags
+    );
+
+}
+
+void drawText(const wchar_t* stringTmp, int x, int y) {
+    assert(g_d3dDevice);
+    assert(g_d3dDeviceContext);
+
+    pFontWrapper->DrawString(
+        g_d3dDeviceContext,
+        stringTmp,// String
+        28.0f,// Font size
+        x,// X position
+        y,// Y position
+        0xff049995,// Text color, white
+        0// Flags
+    );
+
+}
+
+
 //The Update Function
 void UpdateCam() {
 
@@ -1970,8 +2115,7 @@ void Render()
         g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
             D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 
-
-
+        
         /////////Setup the Vertex Shader Stage
 
 
@@ -2131,8 +2275,7 @@ void Render()
 
          g_d3dDeviceContext->Unmap(textureT[0], 0);
          */
-
-
+        
         g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
         g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
             1, //view port count 
@@ -2204,6 +2347,8 @@ void Render()
     //UINT StartVertexLocation
 
     ///////////Present
+    drawText(L"overhead", 0, 0);
+
 
     Present(g_EnableVSync); //var to enable v_sync or not
 }

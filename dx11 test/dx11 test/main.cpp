@@ -10,11 +10,148 @@
 #include <future>
 #include <Gdiplus.h>
 #include "FW1FontWrapper.h" //nuget this
+#include <xaudio2.h>
+
+
+#ifdef _XBOX //Big-Endian
+#define fourccRIFF 'RIFF'
+#define fourccDATA 'data'
+#define fourccFMT 'fmt '
+#define fourccWAVE 'WAVE'
+#define fourccXWMA 'XWMA'
+#define fourccDPDS 'dpds'
+#endif
+
+#ifndef _XBOX //Little-Endian
+#define fourccRIFF 'FFIR'
+#define fourccDATA 'atad'
+#define fourccFMT ' tmf'
+#define fourccWAVE 'EVAW'
+#define fourccXWMA 'AMWX'
+#define fourccDPDS 'sdpd'
+#endif
+//^^ THESE #DEFINES associated above ARE AQUIRED FROM THE OFFICIAL MSDN DOCUMENT FOR X2AUDIO - as a result I do not need to make it
 
 HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
     ID3D11UnorderedAccessView** ppUAVOut);
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
+
+
+
+//audio setup
+IXAudio2* XAudio2; // Audio engine instance
+IXAudio2MasteringVoice* MasterVoice = nullptr;
+
+WAVEFORMATEXTENSIBLE wfx = { 0 }; // I do not remember how I mixed my midi keyboard thing I will use - not too important to use ffmpeg to check channel count for this use case
+XAUDIO2_BUFFER audioBuf = { 0 };
+
+//NON DYNAMIC AUDIO NAMES FOR TESTING PURPOSE
+
+
+#ifdef _XBOX
+void loadFile(char* strFileName)
+
+#else
+void loadFile(TCHAR* strFileName)
+#endif
+{
+
+
+
+}
+
+HRESULT ReadChunkData(HANDLE hFile, void* buffer, DWORD buffersize, DWORD bufferoffset)
+{
+    /*
+    https://docs.microsoft.com/en-us/windows/win32/xaudio2/how-to--load-audio-data-files-in-xaudio2
+    */
+
+    HRESULT hr = S_OK;
+    if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, bufferoffset, NULL, FILE_BEGIN))
+        return HRESULT_FROM_WIN32(GetLastError());
+    DWORD dwRead;
+    if (0 == ReadFile(hFile, buffer, buffersize, &dwRead, NULL))
+        hr = HRESULT_FROM_WIN32(GetLastError());
+    return hr;
+}
+
+HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunkDataPosition)
+{
+    HRESULT hr = S_OK;
+    if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, 0, NULL, FILE_BEGIN))
+        return HRESULT_FROM_WIN32(GetLastError());
+
+    DWORD dwChunkType;
+    DWORD dwChunkDataSize;
+    DWORD dwRIFFDataSize = 0;
+    DWORD dwFileType;
+    DWORD bytesRead = 0;
+    DWORD dwOffset = 0;
+
+    while (hr == S_OK)
+    {
+        DWORD dwRead;
+        if (0 == ReadFile(hFile, &dwChunkType, sizeof(DWORD), &dwRead, NULL)) //return to chunk type and data seperatly with read file
+            hr = HRESULT_FROM_WIN32(GetLastError());
+
+        if (0 == ReadFile(hFile, &dwChunkDataSize, sizeof(DWORD), &dwRead, NULL))
+            hr = HRESULT_FROM_WIN32(GetLastError());
+
+        switch (dwChunkType) //based on chunk that is parsed, read file again, or set a file pointer to file content
+        {
+        case fourccRIFF:
+            dwRIFFDataSize = dwChunkDataSize;
+            dwChunkDataSize = 4;
+            if (0 == ReadFile(hFile, &dwFileType, sizeof(DWORD), &dwRead, NULL))
+                hr = HRESULT_FROM_WIN32(GetLastError());
+            break;
+
+        default:
+            if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, dwChunkDataSize, NULL, FILE_CURRENT))
+                return HRESULT_FROM_WIN32(GetLastError());
+        }
+
+        dwOffset += sizeof(DWORD) * 2; //based on chunk type, calculate the byte offset
+
+        if (dwChunkType == fourcc)
+        {
+            dwChunkSize = dwChunkDataSize;
+            dwChunkDataPosition = dwOffset;
+            return S_OK;
+        }
+
+        dwOffset += dwChunkDataSize;
+
+        if (bytesRead >= dwRIFFDataSize) return S_FALSE;
+
+    }
+
+    return S_OK;
+
+}
+
+void initializeXAudio2() {
+
+    HRESULT hr;
+    hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        OutputDebugStringA(LPCSTR(hr));
+    }
+
+    hr = XAudio2Create(&XAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    if (FAILED(hr)) {
+        OutputDebugStringA(LPCSTR(hr));
+    }
+
+    hr = XAudio2->CreateMasteringVoice(&MasterVoice);
+    if (FAILED(hr)) {
+        OutputDebugStringA(LPCSTR(hr));
+    }
+
+
+}
+
 
 struct VertexPosColor
 {
@@ -24,6 +161,8 @@ struct VertexPosColor
     XMFLOAT2 Tex;
     int TexLink;
 };
+
+
 
 SHORT a = 0;
 bool launchedOPAModel = FALSE;
@@ -1956,7 +2095,7 @@ void drawManyText(const wchar_t* stringTmp, int x, int y) { //use before next fu
         x,// X position
         y,// Y position
         0xff049995,// Text color, white
-        FW1_RESTORESTATE// Flags
+        0// Flags
     );
 
 }
@@ -1972,7 +2111,7 @@ void drawText(const wchar_t* stringTmp, int x, int y) {
         x,// X position
         y,// Y position
         0xff049995,// Text color, white
-        0// Flags
+        FW1_RESTORESTATE// Flags
     );
 
 }

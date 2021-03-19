@@ -11,6 +11,7 @@
 #include <Gdiplus.h>
 #include "FW1FontWrapper.h" //nuget this
 #include <xaudio2.h>
+#include <string.h>     
 
 
 #ifdef _XBOX //Big-Endian
@@ -46,20 +47,12 @@ IXAudio2MasteringVoice* MasterVoice = nullptr;
 WAVEFORMATEXTENSIBLE wfx = { 0 }; // I do not remember how I mixed my midi keyboard thing I will use - not too important to use ffmpeg to check channel count for this use case
 XAUDIO2_BUFFER audioBuf = { 0 };
 
+IXAudio2SourceVoice* SourceVoice;  // THIS IS WHAT I CAN MAKE INTO A VECTOR AND THEN MESS WITH BUFFERS 
+
 //NON DYNAMIC AUDIO NAMES FOR TESTING PURPOSE
 
 
-#ifdef _XBOX
-void loadFile(char* strFileName)
 
-#else
-void loadFile(TCHAR* strFileName)
-#endif
-{
-
-
-
-}
 
 HRESULT ReadChunkData(HANDLE hFile, void* buffer, DWORD buffersize, DWORD bufferoffset)
 {
@@ -69,10 +62,10 @@ HRESULT ReadChunkData(HANDLE hFile, void* buffer, DWORD buffersize, DWORD buffer
 
     HRESULT hr = S_OK;
     if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, bufferoffset, NULL, FILE_BEGIN))
-        return HRESULT_FROM_WIN32(GetLastError());
+        OutputDebugStringA(LPCSTR(GetLastError()));
     DWORD dwRead;
     if (0 == ReadFile(hFile, buffer, buffersize, &dwRead, NULL))
-        hr = HRESULT_FROM_WIN32(GetLastError());
+        OutputDebugStringA(LPCSTR(GetLastError()));
     return hr;
 }
 
@@ -80,7 +73,7 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
 {
     HRESULT hr = S_OK;
     if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, 0, NULL, FILE_BEGIN))
-        return HRESULT_FROM_WIN32(GetLastError());
+        OutputDebugStringA(LPCSTR(GetLastError()));
 
     DWORD dwChunkType;
     DWORD dwChunkDataSize;
@@ -93,10 +86,10 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
     {
         DWORD dwRead;
         if (0 == ReadFile(hFile, &dwChunkType, sizeof(DWORD), &dwRead, NULL)) //return to chunk type and data seperatly with read file
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            OutputDebugStringA(LPCSTR(GetLastError()));
 
         if (0 == ReadFile(hFile, &dwChunkDataSize, sizeof(DWORD), &dwRead, NULL))
-            hr = HRESULT_FROM_WIN32(GetLastError());
+            OutputDebugStringA(LPCSTR(GetLastError()));
 
         switch (dwChunkType) //based on chunk that is parsed, read file again, or set a file pointer to file content
         {
@@ -104,12 +97,12 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
             dwRIFFDataSize = dwChunkDataSize;
             dwChunkDataSize = 4;
             if (0 == ReadFile(hFile, &dwFileType, sizeof(DWORD), &dwRead, NULL))
-                hr = HRESULT_FROM_WIN32(GetLastError());
+                OutputDebugStringA(LPCSTR(GetLastError()));
             break;
 
         default:
             if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, dwChunkDataSize, NULL, FILE_CURRENT))
-                return HRESULT_FROM_WIN32(GetLastError());
+                OutputDebugStringA(LPCSTR(GetLastError()));
         }
 
         dwOffset += sizeof(DWORD) * 2; //based on chunk type, calculate the byte offset
@@ -123,11 +116,11 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
 
         dwOffset += dwChunkDataSize;
 
-        if (bytesRead >= dwRIFFDataSize) return S_FALSE;
+        if (bytesRead >= dwRIFFDataSize) return S_FALSE; // kinda TODO - replace returns with proper string output? may just ignore em
 
     }
-
-    return S_OK;
+    
+    //OutputDebugStringA(LPCSTR("Audio chunk prepared"));
 
 }
 
@@ -136,22 +129,87 @@ void initializeXAudio2() {
     HRESULT hr;
     hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
-        OutputDebugStringA(LPCSTR(hr));
+        OutputDebugStringA(LPCSTR(GetLastError()));
     }
 
     hr = XAudio2Create(&XAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
     if (FAILED(hr)) {
-        OutputDebugStringA(LPCSTR(hr));
+        OutputDebugStringA(LPCSTR(GetLastError()));
     }
 
     hr = XAudio2->CreateMasteringVoice(&MasterVoice);
     if (FAILED(hr)) {
-        OutputDebugStringA(LPCSTR(hr));
+        OutputDebugStringA(LPCSTR(GetLastError()));
     }
 
 
 }
+// most audio code for now was adapted from MDSN XAudio2 official page
+#ifdef _XBOX
+void loadFile(char* strFileName)
 
+#else
+void loadFile(TCHAR* strFileName, WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER*audioBufTMP)
+#endif
+{
+    HANDLE hFile = CreateFile(
+        strFileName,
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+
+    if (INVALID_HANDLE_VALUE == hFile) {
+        OutputDebugStringA(LPCSTR(GetLastError()));
+    }
+
+    if (INVALID_SET_FILE_POINTER == SetFilePointer(hFile, 0, NULL, FILE_BEGIN)) {
+        OutputDebugStringA(LPCSTR(GetLastError()));
+    }
+
+    DWORD dwChunkSize;
+    DWORD dwChunkPosition;
+    //check the file type, should be fourccWAVE or 'XWMA'
+    FindChunk(hFile, fourccRIFF, dwChunkSize, dwChunkPosition);
+    DWORD filetype;
+    ReadChunkData(hFile, &filetype, sizeof(DWORD), dwChunkPosition);
+    if (filetype != fourccWAVE)
+        OutputDebugStringA("file format/type is not correct");
+
+    FindChunk(hFile, fourccFMT, dwChunkSize, dwChunkPosition);
+    ReadChunkData(hFile, wfxTMP, dwChunkSize, dwChunkPosition);
+
+    //fill out the audio data buffer with the contents of the fourccDATA chunk
+    FindChunk(hFile, fourccDATA, dwChunkSize, dwChunkPosition);
+    BYTE* pDataBuffer = new BYTE[dwChunkSize];
+    ReadChunkData(hFile, pDataBuffer, dwChunkSize, dwChunkPosition);
+
+    audioBufTMP->AudioBytes = dwChunkSize;  //size of the audio buffer in bytes
+    audioBufTMP->pAudioData = pDataBuffer;  //buffer containing audio data
+    audioBufTMP->Flags = XAUDIO2_END_OF_STREAM; // tell the source voice not to expect any data after this buffer - 
+}
+
+void playSound(WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER* audioBufTMP, IXAudio2SourceVoice* SourceVoiceTMP) {
+
+    if (FAILED(XAudio2->CreateSourceVoice(&SourceVoiceTMP, (WAVEFORMATEX*)&wfx))) {
+
+        OutputDebugStringA(LPCSTR(GetLastError()));
+
+    }
+
+    if (FAILED(SourceVoiceTMP->SubmitSourceBuffer(audioBufTMP))) {
+
+        OutputDebugStringA(LPCSTR(GetLastError()));
+
+    }
+
+    if (FAILED(SourceVoiceTMP->Start(0))) {
+        OutputDebugStringA(LPCSTR(GetLastError()));
+    }
+
+}
 
 struct VertexPosColor
 {
@@ -1792,6 +1850,16 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 
 bool LoadContent()
 {
+
+    initializeXAudio2();
+
+    TCHAR audioFilePath[30]; 
+    wcscpy_s(audioFilePath, L"./sound/some thing I made.wav");
+    
+
+    loadFile(audioFilePath, &wfx, &audioBuf);
+    playSound(&wfx, &audioBuf, SourceVoice);
+
     inputRelatedThread = std::async(std::launch::async, [] {
         keyInputAsync();
         });

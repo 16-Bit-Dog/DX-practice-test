@@ -1,1 +1,1 @@
-Some DX11 repos I am using as a nice playground 
+Some DX11 repos I am using as a nice playground (point is to build up my skill to work on a more impactful and important project - which as I planned, is what I am doing now — albet off github since it is experimental for the moment

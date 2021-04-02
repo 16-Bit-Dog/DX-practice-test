@@ -2400,8 +2400,7 @@ void Render()
     const UINT offset = 0; //
 
     for (int i = 0; i < g_d3dVertexBufferV.size(); i++) {
-
-        // for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        
         g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
             0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
             1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
@@ -2415,18 +2414,10 @@ void Render()
             &g_d3dVertexBufferV[i], //pointer to array of vertex buffers [may not be array too]
             &vertexStride,  //ponter to array of stride values for each buffer
             &offset); //offset for each buffer in vertex buffer array
-   // }
-
-
-
-    //g_d3dDeviceContext -> Map(g_d3dVertexBuffer,0, D3D11_MAP_WRITE, 0, &VMmap); //for now map to kill all later - will need to revamp this to make it additive later
-
-    //g_d3dDeviceContext->Unmap(g_d3dVertexBuffer, 0);
-
+   
         g_d3dDeviceContext->IASetInputLayout(
             g_d3dInputLayout);  //set input layout
-
-        //for (int i = 0; i < g_d3dIndexBufferV.size(); i++) {
+        
         g_d3dDeviceContext->IASetIndexBuffer(
             g_d3dIndexBufferV[i], //index buffer array pointer
             DXGI_FORMAT_R16_UINT, //format of DXGI format
@@ -2474,19 +2465,15 @@ void Render()
             
       //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
         }
-        //setup compute shader:
-     //   for (int i = 0; i < g_d3dComputeShader.size(); i++) {
 
-        // Disable Compute Shader left over garbage from test build that I lazily removed to get a working proj
-
-        ///////////Setup the Rasterizer Stage
+        ///////////Setup the Rasterizer Stage - NEED TO DO, NOT FULLY IMPLEMENTED YET
         /*
 
         After the vertex shader stage but before the pixel shader stage comes the
         rasterizer stage. The rasterizer stage is responsible
         for interpolating the various vertex attributes output from the vertex shader
         and invoking the pixel shader program for each screen pixel which is affected by the rendered geometry.
-        https://www.3dgep.com/introduction-to-directx-11/#Introduction
+        https://docs.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-rasterizer-stage-getting-started <-- dx10 is not far off from dx11
         */
         ID3D11ShaderResourceView* unbind3 = nullptr;
 
@@ -2502,47 +2489,10 @@ void Render()
 
         for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
             g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
-
-            //textureV[i]->GetDesc();
-    //        g_d3dDeviceContext->PSSetSamplers(0, 1, );
-            //   g_d3dDeviceContext->Map(textureT[i], 0, D3D11_MAP{ D3D11_MAP_READ }, 0, 0);
         }
 
         g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
 
-
-///
-//    g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-//        D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
-
-    
-        /*
-    g_d3dDeviceContext->GSSetShaderResources(
-        1,
-        0,
-        nullptr//&textureV[1] //<-- put another buffer here to test?
-    );
-    */
-    
-//    g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-//        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
-
-
-    /*
-    g_d3dDeviceContext->GSSetShaderResources(
-        1,
-        0,
-        nullptr//&textureV[1] //<-- put another buffer here to test?
-    );*/
-
-
-
-
-
-
-
-
-    //g_d3dDeviceContext->UpdateSubresource(textureTU[0], 0, nullptr, textureT[0], 0, 0);
         if (i == 0) {
 
             g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
@@ -2555,14 +2505,7 @@ void Render()
                 32,
                 1
             );
-
-            //textureU[0], textureV[0] <-- views of unordered and then ordered
-            //COPY RESOURCES g_d3dDeviceContext->CopyResource();
-            //textureU[0]->GetDesc() <- aquire shader resource struct
-
-           // g_d3dDeviceContext->CSSetShader(nullptr, nullptr, 0); //shader off - do not specifically need this
-            //g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
-        }
+}
         ID3D11ShaderResourceView* unbind1 = nullptr;
         ID3D11UnorderedAccessView* unbind2 = nullptr;
         if (i == 0) {
@@ -2584,13 +2527,7 @@ void Render()
                 ceil(g_Vertices[1].size() / 1024) + 1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
             );
 
-            //D3D11_BUFFER_DESC tmpBufferDesc;
-            //g_d3dVertexBufferV[1]->GetDesc(&tmpBufferDesc);
-
-
-
-    //g_d3dDeviceContext->UpdateSubresource(g_d3dVertexBufferV[1], 0, nullptr, &g_d3dVertexBufferVU[1], tmpBufferDesc.ByteWidth, tmpBufferDesc.StructureByteStride);
-
+            
             g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
             g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
 
@@ -2601,7 +2538,6 @@ void Render()
             );
 
             g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
-        //    g_d3dDeviceContext->CopySubresourceRegion(g_d3dVertexBufferV[1], 0, 0, 0, 0, g_d3dVertexBufferVU[1], 0, 0);
         }
 
 
@@ -2630,20 +2566,6 @@ void Render()
         g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
             1, //view port count 
             &g_Viewport); //view port struct made previously
-
-
-        /*
-        /////////////Setup the Output Merger Stage
-        g_d3dDeviceContext->OMSetRenderTargetsAndUnorderedAccessViews(
-            1,
-            &g_d3dRenderTargetView,
-            g_d3dDepthStencilView,
-            1,
-            textureU.size(),
-            &textureU[0],
-            0
-        );
-      */
         
         g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
             1, //1 render target 
@@ -2652,23 +2574,6 @@ void Render()
 
         g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
 
-        ////////////Draw The Cube
-
-
-        /*
-        std::vector<UINT> joined(gindiceCOUNT);
-
-        int iterator2 = 0;
-
-
-        for (int i = 0; i < g_Indicies.size(); i++) { //seperated instead of using transform to calculate for debugging purposes
-            for (int x = 0; x < g_Indicies[i].size(); x++) {
-                joined[iterator2] = g_Indicies[i][x];
-                iterator2 += 1;
-            }
-        }
-        */
-        //g_d3dDeviceContext->DrawAuto();
         g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
             (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
             0,  //start index location
@@ -2676,7 +2581,7 @@ void Render()
 
     }
 
-    ID3D11Buffer* pNullBuffer = 0;
+    //ID3D11Buffer* pNullBuffer = 0;
    // g_d3dDeviceContext->SOSetTargets(1, &pNullBuffer, 0);
     
     g_d3dDeviceContext->GSSetShader(
@@ -2685,30 +2590,10 @@ void Render()
         0
     );// geo after v
 
-    /*
-
-    g_d3dDeviceContext->DrawIndexedInstanced(
-
-        gindiceCOUNT,
-        g_Indicies.size(),
-        0,
-        0,
-        0
-
-    );
-    */
-    //  g_d3dDeviceContext->DrawAuto(); //for gs stream output
-
-
-    /*
-    g_d3dDeviceContext->Draw( //draw indice+vertex
-        g_Vertices.size(), //indice count
-        g_Vertices[0].Position); //base vertex location
-    */
-    //  UINT VertexCount,
-    //UINT StartVertexLocation
-
+    
     ///////////Present
+
+
     drawText(L"overhead", 0, 0);
 
 

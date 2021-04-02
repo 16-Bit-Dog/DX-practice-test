@@ -27,14 +27,15 @@ cbuffer PerLight1 : register(b4) //const buffer - for stuff needed once per prog
 
 struct GSOutput
 {
-    float4 pos : SV_POSITION;
-
+    float4 pos : POSITION; //vertex attribute var 
 };
 
-[maxvertexcount(6)]
+[maxvertexcount(6)] // this geo shader takes 1 vertex from current vertex buffer and makes 6 vertex triangle stream out of them - makes a fuzzy multiplication of vertex effect
+//by design all made output stream triangles follow the normal, color, and which texture to use symantic from the original input
 void SimpleGeometryShader(point GSOutput input[1], inout TriangleStream<GSOutput> OutputStream)
 {
     GSOutput gsout;
+
     gsout.pos = float4(input[0].pos.x + 0.5, input[0].pos.y + 0.5, input[0].pos.z, input[0].pos.w);
     OutputStream.Append(gsout);
     gsout.pos = float4(input[0].pos.x - 0.5, input[0].pos.y + 0.5, input[0].pos.z, input[0].pos.w);

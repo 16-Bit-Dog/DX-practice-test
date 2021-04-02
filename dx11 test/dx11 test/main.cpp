@@ -38,8 +38,26 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
+std::vector< ID3D11Buffer* > BuffSOp;
+int m_nBufferSize = 1000000;
+D3D11_BUFFER_DESC bufferDescSO =
+{
+    m_nBufferSize,
+    D3D11_USAGE_DEFAULT,
+    D3D11_BIND_STREAM_OUTPUT,
+    0,
+    0,
+    0
+};
+D3D11_SO_DECLARATION_ENTRY SODeclarationEntry[3] =
+{
+{ 0, "SV_POSITION", 0, 0, 4, 0 },
+{ 0, "NORMAL", 0, 0, 3, 0 },
+{ 0, "TEXCOORD", 0, 0, 2, 0 },
+};
 
 
+UINT StreamCount = 0;
 //audio setup
 IXAudio2* XAudio2; // Audio engine instance
 IXAudio2MasteringVoice* MasterVoice = nullptr;
@@ -124,6 +142,8 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
 
 }
 
+
+
 void initializeXAudio2() {
 
     HRESULT hr;
@@ -146,10 +166,10 @@ void initializeXAudio2() {
 }
 // most audio code for now was adapted from MDSN XAudio2 official page
 #ifdef _XBOX
-void loadFile(char* strFileName)
+void loadSoundFile(char* strFileName)
 
 #else
-void loadFile(TCHAR* strFileName, WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER*audioBufTMP)
+void loadSoundFile(TCHAR* strFileName, WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER*audioBufTMP)
 #endif
 {
     HANDLE hFile = CreateFile(
@@ -189,6 +209,7 @@ void loadFile(TCHAR* strFileName, WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER*a
     audioBufTMP->AudioBytes = dwChunkSize;  //size of the audio buffer in bytes
     audioBufTMP->pAudioData = pDataBuffer;  //buffer containing audio data
     audioBufTMP->Flags = XAUDIO2_END_OF_STREAM; // tell the source voice not to expect any data after this buffer - 
+    OutputDebugStringA("");
 }
 
 void playSound(WAVEFORMATEXTENSIBLE* wfxTMP, XAUDIO2_BUFFER* audioBufTMP, IXAudio2SourceVoice* SourceVoiceTMP) {
@@ -720,6 +741,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 template< class ShaderClass >
 ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPoint, const std::string& profile); //template to load and compile shader
 
+template< class ShaderClass >
+ShaderClass* LoadShaderSO(const std::wstring& fileName, const std::string& entryPoint, const std::string& profile); //template to load and compile shader
+
 bool LoadContent(); //load resources for geometry
 void UnloadContent(); //TODO: explain
 
@@ -962,6 +986,17 @@ void keyInputAsync() { //launch and leave it forever running in a spin lock
 
 }
 
+void SObuffCreation() {
+    assert(g_d3dDevice);
+
+    ID3D11Buffer* tmp;
+
+    g_d3dDevice->CreateBuffer(&bufferDescSO, NULL, &tmp);
+    
+    BuffSOp.push_back(tmp);
+    
+}
+
 int Run()
 {
     MSG msg = { 0 };
@@ -1141,9 +1176,13 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
     //swapChainDesc.Flags; //https://docs.microsoft.com/en-ca/windows/win32/api/dxgi/ne-dxgi-dxgi_swap_chain_flag?redirectedfrom=MSDN <-- diffrent flags
     UINT createDeviceFlags = 0;
     //D3D11_CREATE_DEVICE_DEBUG is a debug layer to add extra checks
-//#if _DEBUG
+     
+     
+    
+#if _DEBUG
     createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG;
-    //#endif
+#endif
+    createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG;
 
         // These are the feature levels that we will accept.
     D3D_FEATURE_LEVEL featureLevels[] =
@@ -1399,7 +1438,7 @@ std::string GetLatestProfile<ID3D11VertexShader>()
     // Query the current feature level:
     D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel(); //get usable shader feature level
 
-    switch (featureLevel)
+    switch (featureLevel) // later if needed I will add a dx12 feature level... may be smart... 
     {
     case D3D_FEATURE_LEVEL_11_1:
     case D3D_FEATURE_LEVEL_11_0:
@@ -1641,6 +1680,26 @@ make shader object - LoadShader time:
 */
 
 template< class ShaderClass >
+ShaderClass* CreateShaderSO(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage); //generic shader creation, take in parameters [need to specify what later]
+template<>
+ID3D11GeometryShader* CreateShaderSO<ID3D11GeometryShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
+{
+    assert(g_d3dDevice);
+    assert(pShaderBlob);
+
+    SObuffCreation();
+
+    StreamCount += 1;
+    ID3D11GeometryShader* pGeometryShader = nullptr;
+    UINT tmpa = sizeof(SODeclarationEntry);
+
+    g_d3dDevice->CreateGeometryShaderWithStreamOutput(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), SODeclarationEntry, _countof(SODeclarationEntry), nullptr, 0, D3D11_SO_NO_RASTERIZED_STREAM, nullptr, &pGeometryShader); //pixel shader version of the vertex shader above
+
+    return pGeometryShader;
+
+}
+
+template< class ShaderClass >
 ShaderClass* CreateShader(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage); //generic shader creation, take in parameters [need to specify what later]
 
 template<>
@@ -1736,6 +1795,59 @@ ID3D11DomainShader* CreateShader<ID3D11DomainShader>(ID3DBlob* pShaderBlob, ID3D
     g_d3dDevice->CreateDomainShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pDomainShader); //pixel shader version of the vertex shader above
 
     return pDomainShader;
+}
+template< class ShaderClass >
+ShaderClass* LoadShaderSO(const std::wstring& fileName, const std::string& entryPoint, const std::string& _profile) //LoadShader class
+{
+    //volatile auto a = std::filesystem::exists("./SimpleComputeShader.hlsl"); //debug test; this is not real project for much else than test and fun
+    OutputDebugStringW(fileName.c_str());
+    ID3DBlob* pShaderBlob = nullptr;
+    ID3DBlob* pErrorBlob = nullptr;
+    ShaderClass* pShader = nullptr;
+
+    std::string profile = _profile;
+    if (profile == "latest")
+    {
+        profile = GetLatestProfile<ShaderClass>(); //get able shader profiles/settings
+    }
+
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+
+#if _DEBUG
+    flags |= D3DCOMPILE_DEBUG;
+#endif
+
+    HRESULT hr = D3DCompileFromFile( //HLSL shader into a Binary Large Object (BLOB)  --> D3DCompileFromFile does this
+        fileName.c_str(),  //shader path name
+        nullptr, //array of shader macro's [try async compile later] - https://docs.microsoft.com/en-ca/windows/win32/api/d3dcommon/ns-d3dcommon-d3d_shader_macro?redirectedfrom=MSDN  --> stuff like async creation exists
+        D3D_COMPILE_STANDARD_FILE_INCLUDE,  //read file realtive to current directory
+        entryPoint.c_str(), //name of shader for execution point
+        profile.c_str(),// set of shader features to compile against --> converted to c_str() because winAPI... 
+        flags, //compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-constants?redirectedfrom=MSDN  - like always use | to add more
+        0, //effect compile flags - https://docs.microsoft.com/en-ca/windows/win32/direct3dhlsl/d3dcompile-effect-constants?redirectedfrom=MSDN 
+        &pShaderBlob,// pointer to output shader Blob - compiled stuff
+        &pErrorBlob);// error to Blob 
+
+    if (FAILED(hr))
+    {
+        if (pErrorBlob) // if no blob, we free all data related to this
+        {
+            std::string errorMessage = (char*)pErrorBlob->GetBufferPointer(); //error message of when making shaderblob
+            OutputDebugStringA(errorMessage.c_str()); //print string to visaul studio debug log - no need for a console
+
+            SafeRelease(pShaderBlob); //clear mem of shader
+            SafeRelease(pErrorBlob); //clear mem of error shader
+        }
+
+        //    return false;
+    }
+
+    pShader = CreateShaderSO<ShaderClass>(pShaderBlob, nullptr); // if no crash I can make a shader using shader blob 
+
+    SafeRelease(pShaderBlob); // no longer need shader mem
+    SafeRelease(pErrorBlob); // no longer need shader mem
+
+    return pShader;
 }
 
 template< class ShaderClass >
@@ -1857,7 +1969,7 @@ bool LoadContent()
     wcscpy_s(audioFilePath, L"./sound/some thing I made.wav");
     
 
-    loadFile(audioFilePath, &wfx, &audioBuf);
+    loadSoundFile(audioFilePath, &wfx, &audioBuf);
     playSound(&wfx, &audioBuf, SourceVoice);
 
     inputRelatedThread = std::async(std::launch::async, [] {
@@ -2002,6 +2114,8 @@ bool LoadContent()
     g_d3dVertexShader = LoadShader<ID3D11VertexShader>(L"./SimpleVertexShader.hlsl", "SimpleVertexShader", "latest"); //load shader hlsl file named as object SimpleVertexShader
     g_d3dPixelShader = LoadShader<ID3D11PixelShader>(L"./SimplePixelShader.hlsl", "SimplePixelShader", "latest"); //load shader hlsl file named as object SimplePixelShader
     g_d3dGeometryShader = LoadShader<ID3D11GeometryShader>(L"./SimpleGeometryShader.hlsl", "SimpleGeometryShader", "latest"); //load shader hlsl file named as object SimplePixelShader
+    //g_d3dGeometryShader = LoadShaderSO<ID3D11GeometryShader>(L"./SimpleGeometryShader.hlsl", "SimpleGeometryShader", "latest"); //load shader hlsl file named as object SimplePixelShader
+
     g_d3dComputeShader = LoadShader<ID3D11ComputeShader>(L"./SimpleComputeShader.hlsl", "SimpleComputeShader", "latest");
 
     g_d3dComputeShaderSmooth = LoadShader<ID3D11ComputeShader>(L"./SmoothMotionCompute.hlsl", "SmoothMotionCompute", "latest");
@@ -2338,8 +2452,25 @@ void Render()
         g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
             0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
             5, //number of buffers - obejct, frame, and application buffers
-            g_d3dConstantBuffers); //arra of const buffer is given to device
+            g_d3dConstantBuffers
+        ); //arra of const buffer is given to device
+        if (i == 0) {
 
+            /*
+            g_d3dDeviceContext->GSSetConstantBuffers(
+                0,
+                5,
+                g_d3dConstantBuffers
+            );
+
+            g_d3dDeviceContext->GSSetShader(
+                g_d3dGeometryShader,
+                nullptr,
+                0
+            );// geo after v
+            */
+      //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
+        }
         //setup compute shader:
      //   for (int i = 0; i < g_d3dComputeShader.size(); i++) {
 
@@ -2378,13 +2509,22 @@ void Render()
 
 
 ///
-    /*
-    g_d3dDeviceContext->GSSetShader(
-        g_d3dGeometryShader,
-        nullptr,
-        0
-    );// geo after v
+//    g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+//        D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+
+    
+        /*
+    g_d3dDeviceContext->GSSetShaderResources(
+        1,
+        0,
+        nullptr//&textureV[1] //<-- put another buffer here to test?
+    );
     */
+    
+//    g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+//        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+
+
     /*
     g_d3dDeviceContext->GSSetShaderResources(
         1,
@@ -2501,7 +2641,7 @@ void Render()
             0
         );
       */
-
+        
         g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
             1, //1 render target 
             &g_d3dRenderTargetView, //setup array of render view  - can be null
@@ -2525,13 +2665,25 @@ void Render()
             }
         }
         */
+        //g_d3dDeviceContext->DrawAuto();
         g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
             (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
             0,  //start index location
             0); //base vertex location
 
     }
+
+    ID3D11Buffer* pNullBuffer = 0;
+   // g_d3dDeviceContext->SOSetTargets(1, &pNullBuffer, 0);
+    
+    g_d3dDeviceContext->GSSetShader(
+        nullptr,
+        nullptr,
+        0
+    );// geo after v
+
     /*
+
     g_d3dDeviceContext->DrawIndexedInstanced(
 
         gindiceCOUNT,

@@ -2433,9 +2433,10 @@ void Render()
             0); //offset
     //}
 
-        g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
-
+        if (i == 0) {
+            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+        }
         
         /////////Setup the Vertex Shader Stage
 
@@ -2454,9 +2455,11 @@ void Render()
             5, //number of buffers - obejct, frame, and application buffers
             g_d3dConstantBuffers
         ); //arra of const buffer is given to device
-        if (i == 0) {
+        if (i == 1) {
 
-            /*
+            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+                D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+
             g_d3dDeviceContext->GSSetConstantBuffers(
                 0,
                 5,
@@ -2468,7 +2471,7 @@ void Render()
                 nullptr,
                 0
             );// geo after v
-            */
+            
       //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
         }
         //setup compute shader:

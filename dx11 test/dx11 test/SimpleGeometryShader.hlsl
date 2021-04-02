@@ -1,29 +1,48 @@
-////////NOT WORKING PLACE HOLDER
+//D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ
 
-struct GeoShaderInput //pixel shader input struct
+cbuffer PerApplication : register(b0) //const buffer - for stuff needed once per program life time
 {
-	float4 position  : SV_POSITION;//take in color
+    matrix projectionMatrix;
+}
+
+cbuffer PerFrame : register(b1) //const buffer object - for stuff updated every frame
+{
+    matrix viewMatrix;
+}
+
+cbuffer PerObject : register(b2) //const buffer - for stuff needed for every object
+{
+    matrix worldMatrix;
+}
+
+cbuffer PerTime : register(b3) //const buffer - for stuff needed once per program life time
+{
+    matrix time;
+}
+
+cbuffer PerLight1 : register(b4) //const buffer - for stuff needed once per program life time
+{
+    matrix lightS1;
+}
+
+struct GSOutput
+{
+    float4 pos : SV_POSITION;
 
 };
 
 [maxvertexcount(6)]
-void SimpleGeometryShader(
-	line float4 inputP[2] : SV_POSITION, //take in triangle from the inputted vertex buffer - one by 1
-//	triangle float4 inputN[3] : NORMAL,
-//	triangle float4 inputC[3] : TEXCOORD,
-
-	inout LineStream< GeoShaderInput > output //this writes to the vertex buffer
-)
+void SimpleGeometryShader(point GSOutput input[1], inout TriangleStream<GSOutput> OutputStream)
 {
-	//FIX VERTEX SETUP
-	for (uint i = 0; i < 2; i++)
-	{
-		GeoShaderInput outputOGS;
-		outputOGS.position = float4(1,1,1,1);
-		
-		output.Append(outputOGS); //write to vertex buffer - I can use this to double/add verticies attached to this object
-	}
-	output.RestartStrip();
+    GSOutput gsout;
+    gsout.pos = float4(input[0].pos.x + 0.5, input[0].pos.y + 0.5, input[0].pos.z, input[0].pos.w);
+    OutputStream.Append(gsout);
+    gsout.pos = float4(input[0].pos.x - 0.5, input[0].pos.y + 0.5, input[0].pos.z, input[0].pos.w);
+    OutputStream.Append(gsout);
+    gsout.pos = float4(input[0].pos.x - 0.5, input[0].pos.y - 0.5, input[0].pos.z, input[0].pos.w);
+    OutputStream.Append(gsout);
+    gsout.pos = float4(input[0].pos.x + 0.5, input[0].pos.y - 0.5, input[0].pos.z, input[0].pos.w);
+    OutputStream.Append(gsout);
 
-
+    
 }

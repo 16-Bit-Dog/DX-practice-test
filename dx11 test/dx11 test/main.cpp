@@ -293,6 +293,8 @@ ID3D11PixelShader* g_d3dPixelShader = nullptr; // pixel shader info
 ID3D11GeometryShader* g_d3dGeometryShader = nullptr;
 ID3D11ComputeShader* g_d3dComputeShader = nullptr;
 ID3D11ComputeShader* g_d3dComputeShaderSmooth = nullptr;
+ID3D11HullShader* g_d3dHullShaderB = nullptr;
+ID3D11DomainShader* g_d3dDomainShaderB = nullptr;
 //buffer objects to hold/store data below
 ///////////////////Here we declare three constant buffers.Constant buffers are used to store shader variables that remain constant during current draw call.
 
@@ -2119,7 +2121,10 @@ bool LoadContent()
     g_d3dComputeShader = LoadShader<ID3D11ComputeShader>(L"./SimpleComputeShader.hlsl", "SimpleComputeShader", "latest");
 
     g_d3dComputeShaderSmooth = LoadShader<ID3D11ComputeShader>(L"./SmoothMotionCompute.hlsl", "SmoothMotionCompute", "latest");
+    
+    g_d3dHullShaderB = LoadShader<ID3D11HullShader>(L"./BasicHullShader.hlsl", "BasicHullShader", "latest");
 
+    g_d3dDomainShaderB = LoadShader<ID3D11DomainShader>(L"./BasicDomainShader.hlsl", "BasicDomainShader", "latest");
     //TEXT
     HRESULT hResult = FW1CreateFactory(FW1_VERSION, &pFW1Factory);
 
@@ -2425,7 +2430,7 @@ void Render()
     //}
 
         if (i == 0) {
-            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's - redundant for now since tess-stage exists for model 1
                 D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
         }
         
@@ -2443,14 +2448,36 @@ void Render()
 
         g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
             0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
-            5, //number of buffers - obejct, frame, and application buffers
+            5, //number of buffers - obejct, frame, and application buffers + 2 others
             g_d3dConstantBuffers
-        ); //arra of const buffer is given to device
+        ); //array of const buffer is given to device
+        ////////
+
+        if (i == 3) {
+
+            g_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+
+            ////////Hull shader
+            g_d3dDeviceContext->HSSetShader(g_d3dHullShaderB, nullptr, 0); //hull shader
+            ////////
+
+            //domain shader
+            g_d3dDeviceContext->DSSetConstantBuffers(0,
+                5, //number of buffers - obejct, frame, and application buffers + 2 others
+                g_d3dConstantBuffers
+            );
+
+            g_d3dDeviceContext->DSSetShader(g_d3dDomainShaderB, nullptr, 0); //hull shader
+
+        }
+
+
         if (i == 1) {
 
             g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
                 D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 
+            ////////GEO shader
             g_d3dDeviceContext->GSSetConstantBuffers(
                 0,
                 5,
@@ -2462,11 +2489,11 @@ void Render()
                 nullptr,
                 0
             );// geo after v
-            
+            ////////
       //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
         }
 
-        ///////////Setup the Rasterizer Stage - NEED TO DO, NOT FULLY IMPLEMENTED YET
+        ///////////Setup the Rasterizer Stage - NEED TO DO, NOT FULLY IMPLEMENTED YET for MSAA and such
         /*
 
         After the vertex shader stage but before the pixel shader stage comes the
@@ -2477,6 +2504,7 @@ void Render()
         */
         ID3D11ShaderResourceView* unbind3 = nullptr;
 
+        ////////PIXEL SHADER
         g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
             g_d3dPixelShader,  // pointer to shader to bind
             nullptr, //array of class instance - can be disabled
@@ -2492,6 +2520,8 @@ void Render()
         }
 
         g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
+        ////////
+
 
         if (i == 0) {
 
@@ -2561,12 +2591,15 @@ void Render()
 
          g_d3dDeviceContext->Unmap(textureT[0], 0);
          */
-        
+         ////////raster stage stuff
         g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
         g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
             1, //view port count 
             &g_Viewport); //view port struct made previously
-        
+        ////////
+
+        ////////Output merdger stuff
+
         g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
             1, //1 render target 
             &g_d3dRenderTargetView, //setup array of render view  - can be null
@@ -2574,21 +2607,41 @@ void Render()
 
         g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
 
+        ////////
+
+
         g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
             (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
             0,  //start index location
             0); //base vertex location
+
+        g_d3dDeviceContext->GSSetShader( // clean up
+            nullptr,
+            nullptr,
+            0
+        );// geo after v
+
+        ////////Hull shader
+        g_d3dDeviceContext->HSSetShader(nullptr, nullptr, 0); //hull shader
+        ////////
+
+        /*
+        //domain shader
+        g_d3dDeviceContext->DSSetConstantBuffers(0,
+            5, //number of buffers - obejct, frame, and application buffers + 2 others
+            nullptr
+        );
+        */
+
+        g_d3dDeviceContext->DSSetShader(nullptr, nullptr, 0); //hull shader
 
     }
 
     //ID3D11Buffer* pNullBuffer = 0;
    // g_d3dDeviceContext->SOSetTargets(1, &pNullBuffer, 0);
     
-    g_d3dDeviceContext->GSSetShader(
-        nullptr,
-        nullptr,
-        0
-    );// geo after v
+
+
 
     
     ///////////Present

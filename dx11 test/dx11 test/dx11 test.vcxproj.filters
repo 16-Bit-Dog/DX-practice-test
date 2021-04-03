@@ -21,6 +21,9 @@
     <ClCompile Include="DirectXTemplatePCH.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="media_capture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DirectXTemplatePCH.h">
@@ -36,6 +39,8 @@
     <FxCompile Include="SimpleComputeShader.hlsl" />
     <FxCompile Include="SimpleGeometryShader.hlsl" />
     <FxCompile Include="SmoothMotionCompute.hlsl" />
+    <FxCompile Include="BasicHullShader.hlsl" />
+    <FxCompile Include="BasicDomainShader.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

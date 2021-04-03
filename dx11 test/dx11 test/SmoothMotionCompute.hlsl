@@ -42,9 +42,13 @@ void SmoothMotionCompute(uint ids : SV_DispatchThreadID)
     
     uint rem = id % 3;
 
-    posModx += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
-    posMody += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
-    posModz += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
+    //posModx += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
+    //posMody += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
+    //posModz += (sin(2 * time) * (sin(time) / log(time))) / (100 * (rem + 1));
+
+    posModx += sin(2 * time) / (10 * (rem + 1));
+    posMody += sin(2 * time) / (10 * (rem + 1));
+    posModz += sin(2 * time) / (10 * (rem + 1));
 
     //time to move every other vertex to simulate water - AN IMPORTANT THING TO KNOW IS THAT THE MODEL IS EVEN, so reminder is fine
     //if (id % 10 == 0) {

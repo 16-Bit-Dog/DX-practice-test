@@ -38,13 +38,16 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
+ID3D11GeometryShader* SOshader = nullptr;
+int SOINDEX = 0;
+
 std::vector< ID3D11Buffer* > BuffSOp;
-int m_nBufferSize = 1000000;
+int m_nBufferSize = 100000;
 D3D11_BUFFER_DESC bufferDescSO =
 {
     m_nBufferSize,
     D3D11_USAGE_DEFAULT,
-    D3D11_BIND_STREAM_OUTPUT,
+    D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_VERTEX_BUFFER,
     0,
     0,
     0
@@ -55,7 +58,6 @@ D3D11_SO_DECLARATION_ENTRY SODeclarationEntry[3] =
 { 0, "NORMAL", 0, 0, 3, 0 },
 { 0, "TEXCOORD", 0, 0, 2, 0 },
 };
-
 
 UINT StreamCount = 0;
 //audio setup
@@ -1695,7 +1697,9 @@ ID3D11GeometryShader* CreateShaderSO<ID3D11GeometryShader>(ID3DBlob* pShaderBlob
     ID3D11GeometryShader* pGeometryShader = nullptr;
     UINT tmpa = sizeof(SODeclarationEntry);
 
-    g_d3dDevice->CreateGeometryShaderWithStreamOutput(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), SODeclarationEntry, _countof(SODeclarationEntry), nullptr, 0, D3D11_SO_NO_RASTERIZED_STREAM, nullptr, &pGeometryShader); //pixel shader version of the vertex shader above
+    g_d3dDevice->CreateGeometryShaderWithStreamOutput(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), SODeclarationEntry, _countof(SODeclarationEntry), nullptr, 0, SOINDEX, nullptr, &pGeometryShader); //pixel shader version of the vertex shader above
+
+    SOINDEX += 1;
 
     return pGeometryShader;
 
@@ -2125,6 +2129,7 @@ bool LoadContent()
     g_d3dHullShaderB = LoadShader<ID3D11HullShader>(L"./BasicHullShader.hlsl", "BasicHullShader", "latest");
 
     g_d3dDomainShaderB = LoadShader<ID3D11DomainShader>(L"./BasicDomainShader.hlsl", "BasicDomainShader", "latest");
+    SOshader = LoadShaderSO< ID3D11GeometryShader>(L"./SO.hlsl", "SO", "latest");
     //TEXT
     HRESULT hResult = FW1CreateFactory(FW1_VERSION, &pFW1Factory);
 
@@ -2404,6 +2409,91 @@ void Render()
     const UINT vertexStride = sizeof(VertexPosColor); //
     const UINT offset = 0; //
 
+    for (int i = 0; i < BuffSOp.size(); i++) { //not an efficent render pass - exists like the rest, just as a play ground that consistantly works
+        g_d3dDeviceContext->IASetInputLayout(
+            g_d3dInputLayout);  //set input layout
+
+        g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
+            g_d3dVertexShader, //pointer to shader to bind
+            nullptr, //array of class instance - can be disabled
+            0); //num of class instance above
+
+
+
+
+        g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
+            0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
+            5, //number of buffers - obejct, frame, and application buffers + 2 others
+            g_d3dConstantBuffers
+        ); //array of const buffer is given to device
+        ////////
+
+   //     g_d3dDeviceContext->IASetVertexBuffers(0, 1, &BuffSOp[i], &vertexStride, &offset); //dummy buffer
+
+
+
+        g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+
+        g_d3dDeviceContext->GSSetConstantBuffers(
+            0,
+            5,
+            g_d3dConstantBuffers
+        );
+
+        g_d3dDeviceContext->GSSetShader(
+            SOshader,
+            nullptr,
+            0
+        );// geo after v
+
+        g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[i], 0);
+
+        ////////PIXEL SHADER
+        g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
+            g_d3dPixelShader,  // pointer to shader to bind
+            nullptr, //array of class instance - can be disabled
+            0); //number of instance
+
+        g_d3dDeviceContext->PSSetConstantBuffers( //pixel state to bind to shader state
+            0,  // pointer to shader to bind
+            5, //array of class instance - can be disabled
+            g_d3dConstantBuffers); //number of instance
+
+        for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
+            g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
+        }
+
+        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel shader
+
+
+        g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
+        g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
+            1, //view port count 
+            &g_Viewport); //view port struct made previously
+        ////////
+
+        ////////Output merdger stuff
+
+        g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
+            1, //1 render target 
+            &g_d3dRenderTargetView, //setup array of render view  - can be null
+            g_d3dDepthStencilView); //setup array of stencil view - can be null
+
+        g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
+        
+        g_d3dDeviceContext->DrawAuto();
+
+
+        g_d3dDeviceContext->GSSetShader( // clean up
+            nullptr,
+            nullptr,
+            0
+        );// geo after v
+
+
+    }
+
     for (int i = 0; i < g_d3dVertexBufferV.size(); i++) {
         
         g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
@@ -2519,7 +2609,7 @@ void Render()
             g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
         }
 
-        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel sahder
+        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel shader
         ////////
 
 

@@ -271,7 +271,7 @@ void initializeXAudio2() {
     if (FAILED(hr)) {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
-    MFCreateSample(&sampleMain);
+    
 
 }
 // most audio code for now was adapted from MDSN XAudio2 official page
@@ -2444,7 +2444,9 @@ void UpdateCam() {
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
-    
+    SafeRelease(sampleMain);
+    MFCreateSample(&sampleMain);
+
     //live sound reading
     SourceVoice->GetState(&stateOAudio, 0);
     Reader->ReadSample(

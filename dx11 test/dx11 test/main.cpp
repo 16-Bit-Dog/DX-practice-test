@@ -1,3 +1,5 @@
+//THIS CODE IS MESSY - YES I KNOW, I WILL REFORMAT IT ONCE DONE ALL BASICS... ELSE WHATS THE POINT (ctrl f is always faster to traverse since I memorized most varibles)?
+
 #include "DirectXTemplatePCH.h"
 #include <filesystem>
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -12,6 +14,9 @@
 #include "FW1FontWrapper.h" //nuget this
 #include <xaudio2.h>
 #include <string.h>     
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
 
 
 #ifdef _XBOX //Big-Endian
@@ -37,6 +42,15 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
     ID3D11UnorderedAccessView** ppUAVOut);
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
+
+DWORD flagDumper = 0;
+
+IMFSample* sampleMain;
+
+IMFMediaSource* mReader = NULL;
+IMFSourceReader* Reader = NULL;
+
+XAUDIO2_VOICE_STATE stateOAudio;
 
 float audioLoudness = 0;
 
@@ -145,16 +159,108 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
     //OutputDebugStringA(LPCSTR("Audio chunk prepared"));
 
 }
+HRESULT CreateAudioCaptureDevice(PCWSTR* pszEndPointID, IMFMediaSource** ppSource)
+{
+    *ppSource = NULL;
 
+    IMFAttributes* pAttributes = NULL;
+    IMFMediaSource* pSource = NULL;
 
+    HRESULT hr = MFCreateAttributes(&pAttributes, 2);
+
+    // Set the device type to audio.
+    if (SUCCEEDED(hr))
+    {
+        hr = pAttributes->SetGUID(
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_GUID
+        );
+    }
+
+    // Set the endpoint ID.
+    if (SUCCEEDED(hr))
+    {
+        hr = pAttributes->SetString(
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ENDPOINT_ID,
+            (LPCWSTR)pszEndPointID
+        );
+    }
+
+    if (SUCCEEDED(hr))
+    {
+        hr = MFCreateDeviceSource(pAttributes, ppSource);
+    }
+
+//    SafeRelease(&pAttributes);
+    return hr;
+}
+
+HRESULT CreateAudioCaptureDevice(IMFMediaSource** ppSource)
+{
+    *ppSource = NULL;
+
+    UINT32 count = 0;
+
+    IMFAttributes* pConfig = NULL;
+    IMFActivate** ppDevices = NULL;
+
+    // Create an attribute store to hold the search criteria.
+    HRESULT hr = MFCreateAttributes(&pConfig, 1);
+
+    // Request video capture devices.
+    if (SUCCEEDED(hr))
+    {
+        hr = pConfig->SetGUID(
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_GUID
+        );
+    }
+
+    // Enumerate the devices,
+    if (SUCCEEDED(hr))
+    {
+        hr = MFEnumDeviceSources(pConfig, &ppDevices, &count);
+    }
+
+    // Create a media source for the first device in the list.
+    if (SUCCEEDED(hr))
+    {
+        if (count > 0)
+        {
+            hr = ppDevices[0]->ActivateObject(IID_PPV_ARGS(ppSource));
+        }
+        else
+        {
+          //  hr = MF_E_NOT_FOUND;
+        }
+    }
+
+    for (DWORD i = 0; i < count; i++)
+    {
+        ppDevices[i]->Release();
+    }
+    CoTaskMemFree(ppDevices);
+    return hr;
+}
 
 void initializeXAudio2() {
-
-    HRESULT hr;
-    hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    HRESULT hr = 0;
     if (FAILED(hr)) {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
+
+    hr = MFStartup(MF_VERSION);
+
+    hr = CreateAudioCaptureDevice(&mReader);
+
+
+    hr = MFCreateSourceReaderFromMediaSource(mReader, 0, &Reader);
+    if (FAILED(hr)) {
+        OutputDebugStringA(LPCSTR(GetLastError()));
+    }
+
+    
+
 
     hr = XAudio2Create(&XAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
     if (FAILED(hr)) {
@@ -165,7 +271,7 @@ void initializeXAudio2() {
     if (FAILED(hr)) {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
-
+    MFCreateSample(&sampleMain);
 
 }
 // most audio code for now was adapted from MDSN XAudio2 official page
@@ -764,7 +870,7 @@ void Cleanup(); //clean dx resources
  */
 int InitApplication(HINSTANCE hInstance, int cmdShow)
 {
-    CoInitialize(NULL);
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     WNDCLASSEX wndClass = { 0 };
     wndClass.cbSize = sizeof(WNDCLASSEX); //size in bytes of WNDCLASSX 
     wndClass.style = CS_HREDRAW | CS_VREDRAW; //if moveing window, adjust width, then height (HRe is width, VRe is height)
@@ -2338,6 +2444,19 @@ void UpdateCam() {
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
+    
+    //live sound reading
+    SourceVoice->GetState(&stateOAudio, 0);
+    Reader->ReadSample(
+        MF_SOURCE_READER_ANY_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
+        0, //MF_SOURCE_READER_CONTROLF_DRAIN
+        0, //may need to retrive index and continue to retrive all --> until flagDumper returns error value for null left
+        &flagDumper,
+        0,
+        &sampleMain);
+    //
+
+
     UpdateCam();
 
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0); //update subresource data of constant buffer
@@ -2411,8 +2530,9 @@ void Render()
     
     //MasterVoice->GetVolume(&audioLoudness);
     //SourceVoice->GetVolume(&audioLoudness);
-    //
-    //SourceVoice->GetFrequencyRatio(&audioLoudness);
+    //SourceVoice->GetVolume(&audioLoudness);
+
+    //volatile DWORD zzaadd = GetLastError();
 
     const UINT vertexStride = sizeof(VertexPosColor); //
     const UINT offset = 0; //

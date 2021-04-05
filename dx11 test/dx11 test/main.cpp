@@ -42,7 +42,7 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
-std::vector<double> realAudDec(100000);//one hundred thousand is enough :')
+std::vector<INT64> realAudDec(100000);//one hundred thousand is enough :')
 
 WAVEFORMATEX* InfoOfAud = NULL;
 
@@ -2454,6 +2454,24 @@ void UpdateCam() {
 
     g_ViewMatrix = XMMatrixLookAtLH(camPosition, camTarget, camUp);
 }
+void toint(byte* byteArr, DWORD* length) { //static vector pass through because why not... its a simple change for later if I do not want static (this is faster)
+    //double value;
+    int bitpush = InfoOfAud->wBitsPerSample/8;
+    int bitSet;
+    
+    for (int i = 0; i < *length; i+= bitpush) {
+        bitSet = 0;
+        for (int x = i; x < i+bitpush; x++) {
+            bitSet <<= 8;
+            bitSet |= byteArr[x] & 0xFF;
+        }
+
+        realAudDec[i / InfoOfAud->wBitsPerSample] = bitSet;
+
+
+    }
+
+}
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
@@ -2484,6 +2502,9 @@ void Update(float deltaTime) //pass net time to pass to have a timer
         sampBuff->Unlock();
 
         //InfoOfAud.wBitsPerSample;
+
+        //realAudDec
+        toint(bSampBuff, &maxLengthSamp);
     }
 
     UpdateCam();

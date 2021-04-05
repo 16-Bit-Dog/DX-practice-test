@@ -18,7 +18,6 @@
 #include <mfidl.h>
 #include <mfreadwrite.h>
 
-
 #ifdef _XBOX //Big-Endian
 #define fourccRIFF 'RIFF'
 #define fourccDATA 'data'
@@ -43,6 +42,10 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
+std::vector<double> realAudDec(100000);//one hundred thousand is enough :')
+
+WAVEFORMATEX* InfoOfAud = NULL;
+
 DWORD maxLengthSamp;
 
 IMFMediaBuffer* sampBuff = NULL;
@@ -54,6 +57,7 @@ IMFSample* sampleMain;
 
 IMFMediaSource* mReader = NULL;
 IMFSourceReader* Reader = NULL;
+IMFMediaType* MediaForm = NULL;
 
 XAUDIO2_VOICE_STATE stateOAudio;
 
@@ -2091,6 +2095,10 @@ bool LoadContent()
     loadSoundFile(audioFilePath, &wfx, &audioBuf);
     playSound(&wfx, &audioBuf, &SourceVoice);
     
+    Reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, &MediaForm);
+
+    MFCreateWaveFormatExFromMFMediaType(MediaForm, &InfoOfAud, 0, MFWaveFormatExConvertFlag_Normal);
+
     inputRelatedThread = std::async(std::launch::async, [] {
         keyInputAsync();
         });
@@ -2449,11 +2457,12 @@ void UpdateCam() {
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
-    sampleMain = NULL;
+    SafeRelease(sampleMain);
     MFCreateSample(&sampleMain);
 
     //live sound reading
-    SourceVoice->GetState(&stateOAudio, 0);
+    //SourceVoice->GetState(&stateOAudio, 0);
+    
     Reader->ReadSample(
         MF_SOURCE_READER_ANY_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
         0, //MF_SOURCE_READER_CONTROLF_DRAIN
@@ -2464,7 +2473,7 @@ void Update(float deltaTime) //pass net time to pass to have a timer
     //
     if (sampleMain != nullptr) { //frame 1 it's null
         sampleMain->GetTotalLength(&maxLengthSamp);
-
+        SafeRelease(sampBuff);
         MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);
 
         sampleMain->CopyToBuffer(sampBuff);
@@ -2473,6 +2482,8 @@ void Update(float deltaTime) //pass net time to pass to have a timer
         sampBuff->Lock(&bSampBuff, NULL, NULL); //bSampBuff is now an array pointer to a bunch of raw data - time to have fun
 
         sampBuff->Unlock();
+
+        //InfoOfAud.wBitsPerSample;
     }
 
     UpdateCam();

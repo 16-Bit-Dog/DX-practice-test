@@ -43,6 +43,11 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
+DWORD maxLengthSamp;
+
+IMFMediaBuffer* sampBuff = NULL;
+BYTE* bSampBuff = NULL;
+
 DWORD flagDumper = 0;
 
 IMFSample* sampleMain;
@@ -2444,7 +2449,7 @@ void UpdateCam() {
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
-    SafeRelease(sampleMain);
+    sampleMain = NULL;
     MFCreateSample(&sampleMain);
 
     //live sound reading
@@ -2457,7 +2462,18 @@ void Update(float deltaTime) //pass net time to pass to have a timer
         0,
         &sampleMain);
     //
+    if (sampleMain != nullptr) { //frame 1 it's null
+        sampleMain->GetTotalLength(&maxLengthSamp);
 
+        MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);
+
+        sampleMain->CopyToBuffer(sampBuff);
+   //     OutputDebugStringA(LPCSTR(maxLengthSamp));
+
+        sampBuff->Lock(&bSampBuff, NULL, NULL); //bSampBuff is now an array pointer to a bunch of raw data - time to have fun
+
+        sampBuff->Unlock();
+    }
 
     UpdateCam();
 

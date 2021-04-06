@@ -42,6 +42,9 @@ HRESULT CreateBufferUAV(ID3D11Device* pDevice, ID3D11Buffer* pBuffer,
 
 using namespace DirectX; // All of the functionsand types defined in the DirectXMath API are wrapped in the DirectX namespace
 
+ID3D11ShaderResourceView* unbind1 = nullptr;
+ID3D11UnorderedAccessView* unbind2 = nullptr;
+
 std::vector<INT64> realAudDec(100000);//one hundred thousand is enough :')
 
 WAVEFORMATEX* InfoOfAud = NULL;
@@ -1830,7 +1833,7 @@ ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D
 {
     assert(g_d3dDevice);
     assert(pShaderBlob);
-
+    
     ID3D11VertexShader* pVertexShader = nullptr;
     g_d3dDevice->CreateVertexShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pVertexShader); //make a shader based on buffer, buffer size, classtype, and return to pshader object
     // create input here as well since blob is here
@@ -2082,23 +2085,29 @@ ShaderClass* LoadShader(const std::wstring& fileName, const std::string& entryPo
 //
 //}
 
+void PlayAudAndAnalysisSetup(std::wstring tmpSTR) {
+
+    //TCHAR audioFilePath[30];
+    //wcscpy_s(audioFilePath, tmpSTR);
+
+
+    loadSoundFile(&tmpSTR[0], &wfx, &audioBuf);
+    playSound(&wfx, &audioBuf, &SourceVoice);
+
+    Reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, &MediaForm);
+
+    MFCreateWaveFormatExFromMFMediaType(MediaForm, &InfoOfAud, 0, MFWaveFormatExConvertFlag_Normal);
+
+
+}
 
 bool LoadContent()
 {
 
     initializeXAudio2();
-
-    TCHAR audioFilePath[30]; 
-    wcscpy_s(audioFilePath, L"./sound/some thing I made.wav");
+    PlayAudAndAnalysisSetup(L"./sound/some thing I made.wav");
     
-
-    loadSoundFile(audioFilePath, &wfx, &audioBuf);
-    playSound(&wfx, &audioBuf, &SourceVoice);
     
-    Reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, &MediaForm);
-
-    MFCreateWaveFormatExFromMFMediaType(MediaForm, &InfoOfAud, 0, MFWaveFormatExConvertFlag_Normal);
-
     inputRelatedThread = std::async(std::launch::async, [] {
         keyInputAsync();
         });
@@ -2472,15 +2481,14 @@ void toint(byte* byteArr, DWORD* length) { //static vector pass through because 
     }
 
 }
+void AudioSampleAnalysis() {
 
-void Update(float deltaTime) //pass net time to pass to have a timer
-{
     SafeRelease(sampleMain);
     MFCreateSample(&sampleMain);
 
     //live sound reading
     //SourceVoice->GetState(&stateOAudio, 0);
-    
+
     Reader->ReadSample(
         MF_SOURCE_READER_ANY_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
         0, //MF_SOURCE_READER_CONTROLF_DRAIN
@@ -2495,7 +2503,7 @@ void Update(float deltaTime) //pass net time to pass to have a timer
         MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);
 
         sampleMain->CopyToBuffer(sampBuff);
-   //     OutputDebugStringA(LPCSTR(maxLengthSamp));
+        //     OutputDebugStringA(LPCSTR(maxLengthSamp));
 
         sampBuff->Lock(&bSampBuff, NULL, NULL); //bSampBuff is now an array pointer to a bunch of raw data - time to have fun
 
@@ -2506,6 +2514,13 @@ void Update(float deltaTime) //pass net time to pass to have a timer
         //realAudDec
         toint(bSampBuff, &maxLengthSamp);
     }
+
+
+}
+
+void Update(float deltaTime) //pass net time to pass to have a timer
+{
+    AudioSampleAnalysis();
 
     UpdateCam();
 
@@ -2569,23 +2584,8 @@ void Present(bool vSync)
     }
 }
 
-//main render
-void Render()
-{
-    assert(g_d3dDevice);
-    assert(g_d3dDeviceContext);
 
-    Clear(Colors::DarkOliveGreen, 1.0f, 0); //make background a color
-
-    
-    //MasterVoice->GetVolume(&audioLoudness);
-    //SourceVoice->GetVolume(&audioLoudness);
-    //SourceVoice->GetVolume(&audioLoudness);
-
-    //volatile DWORD zzaadd = GetLastError();
-
-    const UINT vertexStride = sizeof(VertexPosColor); //
-    const UINT offset = 0; //
+void StreamOutStageTest() {
 
     for (int i = 10; i < BuffSOp.size(); i++) { //not an efficent render pass - exists like the rest, just as a play ground that consistantly works
         g_d3dDeviceContext->IASetInputLayout(
@@ -2659,7 +2659,7 @@ void Render()
             g_d3dDepthStencilView); //setup array of stencil view - can be null
 
         g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
-        
+
         g_d3dDeviceContext->DrawAuto();
 
 
@@ -2672,94 +2672,257 @@ void Render()
 
     }
 
-    for (int i = 0; i < g_d3dVertexBufferV.size(); i++) {
-        
-        g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
-            0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
-            1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
+}
+void LayoutVertexIndexStageSet(int i) {
+    const UINT vertexStride = sizeof(VertexPosColor); //
+    const UINT offset = 0; //
 
-            //StartSlot argument should match the InputSlot of the 
-            //D3D11_INPUT_ELEMENT_DESC elements that were configured 
-            //in the LoadContent function.
+    g_d3dDeviceContext->IASetVertexBuffers( //bind vertex buffer to device context
+        0, //first input slot for binding - each buffer extra is bounded to subsequent input slot // D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT-1 is max
+        1, //vertex buffers in array, num of buffers //D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT – StartSlot is vertex buffer count
 
-
-
-            &g_d3dVertexBufferV[i], //pointer to array of vertex buffers [may not be array too]
-            &vertexStride,  //ponter to array of stride values for each buffer
-            &offset); //offset for each buffer in vertex buffer array
-   
-        g_d3dDeviceContext->IASetInputLayout(
-            g_d3dInputLayout);  //set input layout
-        
-        g_d3dDeviceContext->IASetIndexBuffer(
-            g_d3dIndexBufferV[i], //index buffer array pointer
-            DXGI_FORMAT_R16_UINT, //format of DXGI format
-            0); //offset
-    //}
-
-        if (i == 0) {
-            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's - redundant for now since tess-stage exists for model 1
-                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
-        }
-        
-        /////////Setup the Vertex Shader Stage
+        //StartSlot argument should match the InputSlot of the 
+        //D3D11_INPUT_ELEMENT_DESC elements that were configured 
+        //in the LoadContent function.
 
 
 
-        g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
-            g_d3dVertexShader, //pointer to shader to bind
-            nullptr, //array of class instance - can be disabled
-            0); //num of class instance above
+        &g_d3dVertexBufferV[i], //pointer to array of vertex buffers [may not be array too]
+        &vertexStride,  //ponter to array of stride values for each buffer
+        &offset); //offset for each buffer in vertex buffer array
+
+    g_d3dDeviceContext->IASetInputLayout(
+        g_d3dInputLayout);  //set input layout
+
+    g_d3dDeviceContext->IASetIndexBuffer(
+        g_d3dIndexBufferV[i], //index buffer array pointer
+        DXGI_FORMAT_R16_UINT, //format of DXGI format
+        0); //offset
+//}
+
+    if (i == 0) {
+        g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's - redundant for now since tess-stage exists for model 1
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+    }
+
+    /////////Setup the Vertex Shader Stage
+
+
+
+    g_d3dDeviceContext->VSSetShader( //bound vertex shader to to shader stage as a whole
+        g_d3dVertexShader, //pointer to shader to bind
+        nullptr, //array of class instance - can be disabled
+        0); //num of class instance above
 
 
 
 
-        g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
-            0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
-            5, //number of buffers - obejct, frame, and application buffers + 2 others
-            g_d3dConstantBuffers
-        ); //array of const buffer is given to device
+    g_d3dDeviceContext->VSSetConstantBuffers( // bind constant buffer to shaderr stage
+        0, // index of const buffer    --> // D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT – 1
+        5, //number of buffers - obejct, frame, and application buffers + 2 others
+        g_d3dConstantBuffers
+    ); //array of const buffer is given to device
+    ////////
+
+}
+
+void HullDomainStageTest(int i) {
+
+    if (i == 3) {
+
+        g_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+
+        ////////Hull shader
+        g_d3dDeviceContext->HSSetShader(g_d3dHullShaderB, nullptr, 0); //hull shader
         ////////
 
-        if (i == 3) {
+        //domain shader
+        g_d3dDeviceContext->DSSetConstantBuffers(0,
+            5, //number of buffers - obejct, frame, and application buffers + 2 others
+            g_d3dConstantBuffers
+        );
 
-            g_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST);
+        g_d3dDeviceContext->DSSetShader(g_d3dDomainShaderB, nullptr, 0); //hull shader
 
-            ////////Hull shader
-            g_d3dDeviceContext->HSSetShader(g_d3dHullShaderB, nullptr, 0); //hull shader
-            ////////
+    }
 
-            //domain shader
-            g_d3dDeviceContext->DSSetConstantBuffers(0,
-                5, //number of buffers - obejct, frame, and application buffers + 2 others
-                g_d3dConstantBuffers
-            );
+}
 
-            g_d3dDeviceContext->DSSetShader(g_d3dDomainShaderB, nullptr, 0); //hull shader
+void PointGeoStageTest(int i) {
 
-        }
+    if (i == 1) {
+
+        g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
+            D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+
+        ////////GEO shader
+        g_d3dDeviceContext->GSSetConstantBuffers(
+            0,
+            5,
+            g_d3dConstantBuffers
+        );
+
+        g_d3dDeviceContext->GSSetShader(
+            g_d3dGeometryShader,
+            nullptr,
+            0
+        );// geo after v
+        ////////
+  //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
+    }
+
+}
+
+void PixelStageTest(int i) {
+
+    ////////PIXEL SHADER
+    g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
+        g_d3dPixelShader,  // pointer to shader to bind
+        nullptr, //array of class instance - can be disabled
+        0); //number of instance
+
+    g_d3dDeviceContext->PSSetConstantBuffers( //pixel state to bind to shader state
+        0,  // pointer to shader to bind
+        5, //array of class instance - can be disabled
+        g_d3dConstantBuffers); //number of instance
+
+    for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
+        g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
+    }
+
+    g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel shader
+    ////////
 
 
-        if (i == 1) {
+}
+void RegComputeStage(int i) {
 
-            g_d3dDeviceContext->IASetPrimitiveTopology( //primitive to load tri's
-                D3D11_PRIMITIVE_TOPOLOGY_POINTLIST); // set to use as primitive topology tri list - some may need to be D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
+    if (i == 0) {
 
-            ////////GEO shader
-            g_d3dDeviceContext->GSSetConstantBuffers(
-                0,
-                5,
-                g_d3dConstantBuffers
-            );
+        g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
+        g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
+        g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
+        g_d3dDeviceContext->CSSetConstantBuffers(0, 5, g_d3dConstantBuffers);
 
-            g_d3dDeviceContext->GSSetShader(
-                g_d3dGeometryShader,
-                nullptr,
-                0
-            );// geo after v
-            ////////
-      //      g_d3dDeviceContext->SOSetTargets(1, &BuffSOp[0], 0);
-        }
+        g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
+            32, // to make dynamic I can link this value to the GetDesc width*height of each item.
+            32,
+            1
+        );
+
+        g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1); //I always reset since it passses nothing if need be
+        g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+
+        g_d3dDeviceContext->Dispatch(
+            32,
+            32,
+            1
+        );
+
+        g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
+    }
+
+
+
+}
+
+void SmoothMoveCompute(int i) {
+
+    if (textureV.size() > 1 && i == 1) {
+        g_d3dDeviceContext->CSSetShader(g_d3dComputeShaderSmooth, nullptr, 0);
+        g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &VbUAV[1], 0); //change UAV alongside SRV
+
+        g_d3dDeviceContext->Dispatch( //times to launch compute shader 
+            ceil(g_Vertices[1].size() / 1024) + 1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
+        );
+
+
+        g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
+        g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
+
+        g_d3dDeviceContext->Dispatch(
+            ceil(g_Vertices[1].size() / 1024) + 1,
+            1,
+            1
+        );
+
+        g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
+    }
+
+}
+
+void RastStage(int i) {
+
+
+    g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
+    g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
+        1, //view port count 
+        &g_Viewport); //view port struct made previously
+
+
+}
+
+void OutputMergeStage(int i) {
+
+    g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
+        1, //1 render target 
+        &g_d3dRenderTargetView, //setup array of render view  - can be null
+        g_d3dDepthStencilView); //setup array of stencil view - can be null
+
+    g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
+
+
+}
+
+void UnsetShaderGeneral() {
+
+    g_d3dDeviceContext->GSSetShader( // clean up
+        nullptr,
+        nullptr,
+        0
+    );// geo after v
+
+    g_d3dDeviceContext->HSSetShader(nullptr, nullptr, 0); //hull shader
+
+    g_d3dDeviceContext->DSSetShader(nullptr, nullptr, 0); //hull shader
+
+}
+
+void IndexDraw(int i) {
+    g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
+        (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
+        0,  //start index location
+        0); //base vertex location
+}
+
+//main render
+void Render()
+{
+    assert(g_d3dDevice);
+    assert(g_d3dDeviceContext);
+
+    Clear(Colors::DarkOliveGreen, 1.0f, 0); //make background a color
+
+    
+    //MasterVoice->GetVolume(&audioLoudness);
+    //SourceVoice->GetVolume(&audioLoudness);
+    //SourceVoice->GetVolume(&audioLoudness);
+
+    //volatile DWORD zzaadd = GetLastError();
+
+
+    if (FALSE) { //off for now
+        StreamOutStageTest();
+    }
+
+    for (int i = 0; i < g_d3dVertexBufferV.size(); i++) {
+        
+        LayoutVertexIndexStageSet(i);
+
+        HullDomainStageTest(i);
+
+
+        PointGeoStageTest(i);
 
         ///////////Setup the Rasterizer Stage - NEED TO DO, NOT FULLY IMPLEMENTED YET for MSAA and such
         /*
@@ -2770,84 +2933,18 @@ void Render()
         and invoking the pixel shader program for each screen pixel which is affected by the rendered geometry.
         https://docs.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-rasterizer-stage-getting-started <-- dx10 is not far off from dx11
         */
-        ID3D11ShaderResourceView* unbind3 = nullptr;
+        
+        PixelStageTest(i);
 
-        ////////PIXEL SHADER
-        g_d3dDeviceContext->PSSetShader( //pixel state to bind to shader state
-            g_d3dPixelShader,  // pointer to shader to bind
-            nullptr, //array of class instance - can be disabled
-            0); //number of instance
+        RegComputeStage(i);
 
-        g_d3dDeviceContext->PSSetConstantBuffers( //pixel state to bind to shader state
-            0,  // pointer to shader to bind
-            5, //array of class instance - can be disabled
-            g_d3dConstantBuffers); //number of instance
+        
 
-        for (int x = 0; x < textureV.size(); x++) { //may later fix to allow 2 models to be unique
-            g_d3dDeviceContext->PSSetShaderResources(0 + x, 1, &textureV[x]);
-        }
-
-        g_d3dDeviceContext->PSSetSamplers(0, 1, &sampler[0]); //pass sampler to pixel shader
-        ////////
-
-
-        if (i == 0) {
-
-            g_d3dDeviceContext->CSSetShader(g_d3dComputeShader, nullptr, 0);
-            g_d3dDeviceContext->CSSetShaderResources(0, 1, &textureV[0]);
-            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &textureU[0], 0); //change UAV alongside SRV
-            g_d3dDeviceContext->CSSetConstantBuffers(0, 5, g_d3dConstantBuffers);
-
-            g_d3dDeviceContext->Dispatch( //only have 1024 pixels... so 32*32 works inside the compute shader
-                32, // to make dynamic I can link this value to the GetDesc width*height of each item.
-                32,
-                1
-            );
-}
-        ID3D11ShaderResourceView* unbind1 = nullptr;
-        ID3D11UnorderedAccessView* unbind2 = nullptr;
-        if (i == 0) {
-            g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
-            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
-
-            g_d3dDeviceContext->Dispatch(
-                32,
-                32,
-                1
-            );
-        }
-
-        if (textureV.size() > 1 && i == 1) {
-            g_d3dDeviceContext->CSSetShader(g_d3dComputeShaderSmooth, nullptr, 0);
-            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &VbUAV[1], 0); //change UAV alongside SRV
-
-            g_d3dDeviceContext->Dispatch( //times to launch compute shader 
-                ceil(g_Vertices[1].size() / 1024) + 1, 1, 1   //more universal way to use the compute shader with various vertex counts - I have a fixed size for now, but later I will be more dynamic
-            );
-
-            
-            g_d3dDeviceContext->CSSetShaderResources(0, 1, &unbind1);
-            g_d3dDeviceContext->CSSetUnorderedAccessViews(0, 1, &unbind2, 0);
-
-            g_d3dDeviceContext->Dispatch(
-                ceil(g_Vertices[1].size() / 1024) + 1,
-                1,
-                1
-            );
-
-            g_d3dDeviceContext->CopyResource(g_d3dVertexBufferV[1], g_d3dVertexBufferVU[1]); // not allowed to copy - only update resource
-        }
-
-
-
-
-
+        SmoothMoveCompute(i);
 
         //https://docs.microsoft.com/en-us/windows/win32/direct3d11/how-to--use-dynamic-resources  <-- Map help
           //g_d3dDeviceContext->UpdateSubresource(textureT[0], 0, nullptr, textureTU[0], 1024, 1024);
-        if (i == 0) {
-            g_d3dDeviceContext->CopyResource(textureT[0], textureTU[0]);
-        }
+
 
         // D3D11_MAPPED_SUBRESOURCE mapStoU;
         // ZeroMemory(&mapStoU, sizeof(mapStoU));
@@ -2860,38 +2957,17 @@ void Render()
          g_d3dDeviceContext->Unmap(textureT[0], 0);
          */
          ////////raster stage stuff
-        g_d3dDeviceContext->RSSetState(g_d3dRasterizerState); //set rasterizer state from deviceContext - InitDirectX 
-        g_d3dDeviceContext->RSSetViewports( //set viewPort state from deviceContext 
-            1, //view port count 
-            &g_Viewport); //view port struct made previously
-        ////////
+        
+        RastStage(i);
 
+                          
+        
         ////////Output merdger stuff
-
-        g_d3dDeviceContext->OMSetRenderTargets( //8 is max currently
-            1, //1 render target 
-            &g_d3dRenderTargetView, //setup array of render view  - can be null
-            g_d3dDepthStencilView); //setup array of stencil view - can be null
-
-        g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1); // bind stencil state after target?
-
+        OutputMergeStage(i);
+        
         ////////
 
-
-        g_d3dDeviceContext->DrawIndexed( //draw indice+vertex
-            (g_Indicies[i].size() * 2), //indice count - yes, this was an issue that needed *2...  
-            0,  //start index location
-            0); //base vertex location
-
-        g_d3dDeviceContext->GSSetShader( // clean up
-            nullptr,
-            nullptr,
-            0
-        );// geo after v
-
-        ////////Hull shader
-        g_d3dDeviceContext->HSSetShader(nullptr, nullptr, 0); //hull shader
-        ////////
+        IndexDraw(i);
 
         /*
         //domain shader
@@ -2900,29 +2976,22 @@ void Render()
             nullptr
         );
         */
-
-        g_d3dDeviceContext->DSSetShader(nullptr, nullptr, 0); //hull shader
-
+        UnsetShaderGeneral();
+        
     }
 
     //ID3D11Buffer* pNullBuffer = 0;
    // g_d3dDeviceContext->SOSetTargets(1, &pNullBuffer, 0);
     
-
-
-
-    
     ///////////Present
-
 
     drawText(L"overhead", 0, 0);
 
-
-    Present(g_EnableVSync); //var to enable v_sync or not
+    Present(g_EnableVSync); //var to enable v_sync or not - draw frame out
 }
 
 void UnloadContent() //clean up
-{
+{//NEED TO CLEAN UP ALL OBJECTS LATER - TODO:
     SafeRelease(g_d3dConstantBuffers[CB_Application]);
     SafeRelease(g_d3dConstantBuffers[CB_Frame]);
     SafeRelease(g_d3dConstantBuffers[CB_Object]);
@@ -2950,7 +3019,7 @@ void UnloadContent() //clean up
     CoUninitialize();
 }
 
-void Cleanup()
+void Cleanup() //NEED TO CLEAN UP ALL OBJECTS LATER - TODO:
 {
     SafeRelease(g_d3dDepthStencilView);
     SafeRelease(g_d3dRenderTargetView);

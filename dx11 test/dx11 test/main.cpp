@@ -17,7 +17,6 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
-
 #ifdef _XBOX //Big-Endian
 #define fourccRIFF 'RIFF'
 #define fourccDATA 'data'
@@ -47,6 +46,8 @@ ID3D11UnorderedAccessView* unbind2 = nullptr;
 
 std::vector<INT64> realAudDec(100000);//one hundred thousand is enough :')
 
+
+
 WAVEFORMATEX* InfoOfAud = NULL;
 
 DWORD maxLengthSamp;
@@ -60,6 +61,8 @@ IMFSample* sampleMain;
 
 IMFMediaSource* mReader = NULL;
 IMFSourceReader* Reader = NULL;
+IMFSourceReaderCallback* ReaderCB = NULL;
+
 IMFMediaType* MediaForm = NULL;
 
 XAUDIO2_VOICE_STATE stateOAudio;
@@ -171,14 +174,15 @@ HRESULT FindChunk(HANDLE hFile, DWORD fourcc, DWORD& dwChunkSize, DWORD& dwChunk
     //OutputDebugStringA(LPCSTR("Audio chunk prepared"));
 
 }
-HRESULT CreateAudioCaptureDevice(PCWSTR* pszEndPointID, IMFMediaSource** ppSource)
+
+HRESULT CreateAudioCaptureDeviceC(LPCWSTR pszEndPointID, IMFMediaSource** ppSource)
 {
     *ppSource = NULL;
 
     IMFAttributes* pAttributes = NULL;
     IMFMediaSource* pSource = NULL;
 
-    HRESULT hr = MFCreateAttributes(&pAttributes, 2);
+    HRESULT hr = MFCreateAttributes(&pAttributes, 1);
 
     // Set the device type to audio.
     if (SUCCEEDED(hr))
@@ -194,7 +198,7 @@ HRESULT CreateAudioCaptureDevice(PCWSTR* pszEndPointID, IMFMediaSource** ppSourc
     {
         hr = pAttributes->SetString(
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ENDPOINT_ID,
-            (LPCWSTR)pszEndPointID
+            pszEndPointID
         );
     }
 
@@ -203,15 +207,21 @@ HRESULT CreateAudioCaptureDevice(PCWSTR* pszEndPointID, IMFMediaSource** ppSourc
         hr = MFCreateDeviceSource(pAttributes, ppSource);
     }
 
-//    SafeRelease(&pAttributes);
+    SafeRelease(pAttributes);
     return hr;
 }
 
-HRESULT CreateAudioCaptureDevice(IMFMediaSource** ppSource)
+HRESULT CreateAudioCaptureDevice(IMFMediaSource** ppSource) //enumerates mic
 {
     *ppSource = NULL;
 
+    IMFMediaSource* pSource = NULL;
     UINT32 count = 0;
+    LPWSTR AudEndPointID = NULL;
+    LPWSTR AudName = NULL;
+
+    // Try to get the display name.
+    UINT32 cchName;
 
     IMFAttributes* pConfig = NULL;
     IMFActivate** ppDevices = NULL;
@@ -239,38 +249,67 @@ HRESULT CreateAudioCaptureDevice(IMFMediaSource** ppSource)
     {
         if (count > 0)
         {
-            hr = ppDevices[0]->ActivateObject(IID_PPV_ARGS(ppSource));
+            hr = ppDevices[0]->ActivateObject(IID_PPV_ARGS(&pSource));
+          //  ppDevices[0]->GetAllocatedString(
+          //      MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_AUDCAP_ENDPOINT_ID,
+          //      &AudEndPointID, &cchName);
+            *ppSource = pSource;
+            (*ppSource)->AddRef();
+            /*
+            for (DWORD i = 0; i < count; i++) // may not be supposed to clean device 0...
+            {
+                ppDevices[i]->GetAllocatedString(
+                    MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+                    &AudName, &cchName);
+            }
+            */
+
+           // CreateAudioCaptureDeviceC(AudEndPointID, &mReader);
+            //mabey not return first... choose later...
+
+            //ppDevices[0]->GetId(ppstrId);
         }
         else
         {
-          //  hr = MF_E_NOT_FOUND;
+          
         }
     }
 
-    for (DWORD i = 0; i < count; i++)
+
+
+    for (DWORD i = 0; i < count; i++) // may not be supposed to clean device 0...
     {
         ppDevices[i]->Release();
     }
-    CoTaskMemFree(ppDevices);
+    SafeRelease(pConfig);
+    CoTaskMemFree(ppDevices); //<-- not supposed to clear until end?
     return hr;
 }
 
 void initializeXAudio2() {
     HRESULT hr = 0;
+    IMFAttributes* pAttributes = NULL;
     if (FAILED(hr)) {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
 
-    hr = MFStartup(MF_VERSION);
+    hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+
+    hr = MFCreateAttributes(&pAttributes, 1);
+    OutputDebugStringA(LPCSTR(GetLastError()));
+
+    hr = pAttributes->SetUnknown(MF_SOURCE_READER_ASYNC_CALLBACK, ReaderCB);
+
 
     hr = CreateAudioCaptureDevice(&mReader);
 
+    
 
-    hr = MFCreateSourceReaderFromMediaSource(mReader, 0, &Reader);
+    hr = MFCreateSourceReaderFromMediaSource(mReader, pAttributes, &Reader);
     if (FAILED(hr)) {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
-
+    OutputDebugStringA(LPCSTR(GetLastError()));
     
 
 
@@ -284,7 +323,7 @@ void initializeXAudio2() {
         OutputDebugStringA(LPCSTR(GetLastError()));
     }
     
-
+    OutputDebugStringA(LPCSTR(GetLastError()));
 }
 // most audio code for now was adapted from MDSN XAudio2 official page
 #ifdef _XBOX
@@ -2481,23 +2520,31 @@ void toint(byte* byteArr, DWORD* length) { //static vector pass through because 
     }
 
 }
+HRESULT err;
+DWORD trash;
+LONGLONG ll;
 void AudioSampleAnalysis() {
-
-    SafeRelease(sampleMain);
+    
+    if (sampleMain != NULL) {
+        SafeRelease(sampleMain);
+    }
     MFCreateSample(&sampleMain);
 
-    //live sound reading
-    //SourceVoice->GetState(&stateOAudio, 0);
-
-    Reader->ReadSample(
-        MF_SOURCE_READER_ANY_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
-        0, //MF_SOURCE_READER_CONTROLF_DRAIN
-        0, //may need to retrive index and continue to retrive all --> until flagDumper returns error value for null left
-        &flagDumper,
-        0,
-        &sampleMain);
-    //
-    if (sampleMain != nullptr) { //frame 1 it's null
+    //do async read
+        err = Reader->ReadSample( //blocks until next sample is ready, so its slow to run... so I need this to be async... oh man... this is gonna suck
+            MF_SOURCE_READER_FIRST_AUDIO_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
+            0, //MF_SOURCE_READER_CONTROLF_DRAIN
+            NULL, //may need to retrive index and continue to retrive all --> until flagDumper returns error value for null left
+            NULL,//&flagDumper, <-- required to not crash...
+            NULL,
+            NULL);//&sampleMain);
+        
+        if (ReaderCB != NULL) {
+            ReaderCB->OnReadSample(err, trash, flagDumper, ll, sampleMain);
+        }
+    
+    if (sampleMain != NULL && !ERROR(err)) { //frame 1 it's null - else you just will reuse the previous data collected for another frame... audio is async as it turns out
+        
         sampleMain->GetTotalLength(&maxLengthSamp);
         SafeRelease(sampBuff);
         MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);

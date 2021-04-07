@@ -17,6 +17,9 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
+#include <span>
+
+
 #ifdef _XBOX //Big-Endian
 #define fourccRIFF 'RIFF'
 #define fourccDATA 'data'
@@ -44,8 +47,9 @@ using namespace DirectX; // All of the functionsand types defined in the DirectX
 ID3D11ShaderResourceView* unbind1 = nullptr;
 ID3D11UnorderedAccessView* unbind2 = nullptr;
 
-std::vector<INT64> realAudDec(100000);//one hundred thousand is enough :')
+std::vector<double> realAudDecd(100000);//one hundred thousand is enough :')
 
+std::vector<float> realAudDecf(100000);//one hundred thousand is enough :')
 
 
 WAVEFORMATEX* InfoOfAud = NULL;
@@ -2503,28 +2507,11 @@ void UpdateCam() {
 
     g_ViewMatrix = XMMatrixLookAtLH(camPosition, camTarget, camUp);
 }
-void toint(byte* byteArr, DWORD* length) { //static vector pass through because why not... its a simple change for later if I do not want static (this is faster)
-    //double value;
-    int bitpush = InfoOfAud->wBitsPerSample/8;
-    int bitSet;
-    
-    for (int i = 0; i < *length; i+= bitpush) {
-        bitSet = 0;
-        for (int x = i; x < i+bitpush; x++) {
-            bitSet <<= 8;
-            bitSet |= byteArr[x] & 0xFF;
-        }
-
-        realAudDec[i / InfoOfAud->wBitsPerSample] = bitSet;
 
 
-    }
-
-}
 HRESULT err;
 DWORD trash;
 LONGLONG ll;
-
 
 
 
@@ -2566,7 +2553,46 @@ void AudioSampleAnalysis() { //gonna have coscaled memory problems without a pro
             //InfoOfAud.wBitsPerSample;
 
             //realAudDec
-            toint(bSampBuff, &maxLengthSamp);
+
+            //realAudDec = *reinterpret_cast<double*>(bSampBuff);
+            // 
+            // https://www.sounddevices.com/32-bit-float-files-explained/ <-- source for audio understanding... grade school physics and math as well - kid's, listen in class - it matters!
+            if (InfoOfAud->wBitsPerSample == 32) {  //I don't remember if I need reverse order
+
+                for (unsigned int u = 0; u < unsigned int(maxLengthSamp); u += 4) {
+                    union { char b[4]; float d; }; //32 bit audio
+                    b[3] = bSampBuff[u + 3];
+                    b[2] = bSampBuff[u + 2];
+                    b[1] = bSampBuff[u + 1];
+                    b[0] = bSampBuff[u + 0];
+
+                    realAudDecf[u / 4] = d;
+                }
+            }
+
+            else if (InfoOfAud->wBitsPerSample == 64) {
+                for (unsigned int u = 0; u < unsigned int(maxLengthSamp); u += 8) {
+                    union { char b[8]; double d; }; //64 bit audio
+                    b[3] = bSampBuff[u + 7];
+                    b[3] = bSampBuff[u + 6];
+                    b[3] = bSampBuff[u + 5];
+                    b[3] = bSampBuff[u + 4];
+                    b[3] = bSampBuff[u + 3];
+                    b[2] = bSampBuff[u + 2];
+                    b[1] = bSampBuff[u + 1];
+                    b[0] = bSampBuff[u + 0];
+
+                    realAudDecd[u / 8] = d;
+                    // I will need to use maxLengthSamp (its divided by 8?) and this vector inside the compute shader to modify based on values, so all processing must be on this thread, else overwritting and invalidating data at the wrong time could be an issue even with a lock
+                }
+            }
+
+
+            
+            //std::span dat(tmp, maxLengthSamp);
+
+            //std::copy(std::begin(dat), std::end(dat), realAudDec);
+             //toint(bSampBuff, &maxLengthSamp);
         }
 
     }

@@ -489,6 +489,7 @@ IFW1FontWrapper* pFontWrapper;
 XMFLOAT4X4 lightSource1;
 
 std::future<void> inputRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
+std::future<void> audRelatedThread; //yes, I am making a thread DEDICATED to input checking - I really am fine with this
 
 XMVECTOR DefaultForward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 XMVECTOR DefaultRight = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
@@ -2523,52 +2524,57 @@ void toint(byte* byteArr, DWORD* length) { //static vector pass through because 
 HRESULT err;
 DWORD trash;
 LONGLONG ll;
-void AudioSampleAnalysis() {
-    
-    if (sampleMain != NULL) {
-        SafeRelease(sampleMain);
-    }
-    MFCreateSample(&sampleMain);
 
-    //do async read
-        err = Reader->ReadSample( //blocks until next sample is ready, so its slow to run... so I need this to be async... oh man... this is gonna suck
+
+
+
+void AudioSampleAnalysis() { //gonna have coscaled memory problems without a proper lock...
+    while (true) {
+        if (sampleMain != NULL) {
+            SafeRelease(sampleMain);
+        }
+        MFCreateSample(&sampleMain);
+
+        //do async read - but true async is dead
+
+        Reader->ReadSample( //blocks until next sample is ready, so its slow to run... so I need this to be async... oh man... this is gonna suck
             MF_SOURCE_READER_FIRST_AUDIO_STREAM, //currently pulling from audio stream - so I don't care - just want data <-- its why I may thrown onto this the low_latency attriubute for... less latency...
             0, //MF_SOURCE_READER_CONTROLF_DRAIN
             NULL, //may need to retrive index and continue to retrive all --> until flagDumper returns error value for null left
-            NULL,//&flagDumper, <-- required to not crash...
+            &flagDumper,//&flagDumper, <-- required to not crash...
             NULL,
-            NULL);//&sampleMain);
-        
-        if (ReaderCB != NULL) {
-            ReaderCB->OnReadSample(err, trash, flagDumper, ll, sampleMain);
+            &sampleMain);//&sampleMain);
+
+        //if (ReaderCB != NULL) {
+        //    ReaderCB->OnReadSample(err, trash, flagDumper, ll, sampleMain);
+        //}
+
+
+        if (sampleMain != NULL && !ERROR(err)) { //frame 1 it's null - else you just will reuse the previous data collected for another frame... audio is async as it turns out
+
+            sampleMain->GetTotalLength(&maxLengthSamp);
+            SafeRelease(sampBuff);
+            MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);
+
+            sampleMain->CopyToBuffer(sampBuff);
+            //     OutputDebugStringA(LPCSTR(maxLengthSamp));
+
+            sampBuff->Lock(&bSampBuff, NULL, NULL); //bSampBuff is now an array pointer to a bunch of raw data - time to have fun
+
+            sampBuff->Unlock();
+
+            //InfoOfAud.wBitsPerSample;
+
+            //realAudDec
+            toint(bSampBuff, &maxLengthSamp);
         }
-    
-    if (sampleMain != NULL && !ERROR(err)) { //frame 1 it's null - else you just will reuse the previous data collected for another frame... audio is async as it turns out
-        
-        sampleMain->GetTotalLength(&maxLengthSamp);
-        SafeRelease(sampBuff);
-        MFCreateMemoryBuffer(maxLengthSamp, &sampBuff);
 
-        sampleMain->CopyToBuffer(sampBuff);
-        //     OutputDebugStringA(LPCSTR(maxLengthSamp));
-
-        sampBuff->Lock(&bSampBuff, NULL, NULL); //bSampBuff is now an array pointer to a bunch of raw data - time to have fun
-
-        sampBuff->Unlock();
-
-        //InfoOfAud.wBitsPerSample;
-
-        //realAudDec
-        toint(bSampBuff, &maxLengthSamp);
     }
-
-
 }
 
 void Update(float deltaTime) //pass net time to pass to have a timer
 {
-    AudioSampleAnalysis();
-
+    
     UpdateCam();
 
     g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0); //update subresource data of constant buffer
@@ -3109,6 +3115,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPWSTR cmdLine,
         MessageBox(nullptr, TEXT("Failed to load content."), TEXT("Error"), MB_OK);
         return -1;
     }
+    
+    audRelatedThread = std::async(std::launch::async, [] {
+        AudioSampleAnalysis();
+        });
 
     int returnCode = Run(); //start off main loop
 

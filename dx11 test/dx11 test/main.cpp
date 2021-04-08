@@ -47,9 +47,14 @@ using namespace DirectX; // All of the functionsand types defined in the DirectX
 ID3D11ShaderResourceView* unbind1 = nullptr;
 ID3D11UnorderedAccessView* unbind2 = nullptr;
 
-std::vector<double> realAudDecd(100000);//one hundred thousand is enough :')
+std::vector<INT64> realAud64(100000);//one hundred thousand is enough :')
 
-std::vector<float> realAudDecf(100000);//one hundred thousand is enough :')
+std::vector<INT32> realAud32(100000);//one hundred thousand is enough :')
+UINT64 squareSUM = 0;
+INT64 regSUM = 0;
+double average = 0;
+double RealSound = 0;
+double RMS = 0;
 
 
 WAVEFORMATEX* InfoOfAud = NULL;
@@ -2558,35 +2563,71 @@ void AudioSampleAnalysis() { //gonna have coscaled memory problems without a pro
             // 
             // https://www.sounddevices.com/32-bit-float-files-explained/ <-- source for audio understanding... grade school physics and math as well - kid's, listen in class - it matters!
             if (InfoOfAud->wBitsPerSample == 32) {  //I don't remember if I need reverse order
-
+                squareSUM = 0;
+                regSUM = 0;
+                average = 0;
                 for (unsigned int u = 0; u < unsigned int(maxLengthSamp); u += 4) {
-                    union { char b[4]; float d; }; //32 bit audio
-                    b[3] = bSampBuff[u + 3];
-                    b[2] = bSampBuff[u + 2];
-                    b[1] = bSampBuff[u + 1];
-                    b[0] = bSampBuff[u + 0];
+                    union { char b[4]; UINT32 d; }; //32 bit audio
+                    b[3] = bSampBuff[u + 0];
+                    b[2] = bSampBuff[u + 1];
+                    b[1] = bSampBuff[u + 2];
+                    b[0] = bSampBuff[u + 3];
 
-                    realAudDecf[u / 4] = d;
+                    /*
+                    //REVERSE ORDER IF NEEDED
+                    b[3] = bSampBuff[u + 0];
+                    b[2] = bSampBuff[u + 1];
+                    b[1] = bSampBuff[u + 2];
+                    b[0] = bSampBuff[u + 3];
+
+                    
+                    */
+                    
+                    realAud32[u / 4] = (d);
+
+                   // squareSUM += (realAud32[u / 4])*(realAud32[u / 4]);
+                    regSUM += realAud32[u / 4];
+
+
+
+                   /*
+                    if (greatest < realAud32[u / 4]) {
+                        greatest = realAud32[u / 4];
+                    }
+*/
                 }
+                average = regSUM / (maxLengthSamp / 4);
+
+                double postMan = 0;
+                for (unsigned int u = 0; u < (unsigned int(maxLengthSamp) / 4); u++) {
+                    postMan = realAud32[u] - average;
+
+                    squareSUM += postMan * postMan;
+                }
+                    RMS = sqrt( squareSUM / ((maxLengthSamp) / 4) );
+                //RMS = sqrt(squareSUM / (maxLengthSamp / 4));
+                RealSound = -20 * log10(RMS / 2147483647); //multiply to account for a
             }
 
+            //
+            /*
             else if (InfoOfAud->wBitsPerSample == 64) {
                 for (unsigned int u = 0; u < unsigned int(maxLengthSamp); u += 8) {
-                    union { char b[8]; double d; }; //64 bit audio
-                    b[3] = bSampBuff[u + 7];
-                    b[3] = bSampBuff[u + 6];
-                    b[3] = bSampBuff[u + 5];
+                    union { char b[8]; UINT64 d; }; //64 bit audio
+                    b[7] = bSampBuff[u + 0];
+                    b[6] = bSampBuff[u + 1];
+                    b[5] = bSampBuff[u + 2];
+                    b[4] = bSampBuff[u + 3];
                     b[3] = bSampBuff[u + 4];
-                    b[3] = bSampBuff[u + 3];
-                    b[2] = bSampBuff[u + 2];
-                    b[1] = bSampBuff[u + 1];
-                    b[0] = bSampBuff[u + 0];
+                    b[2] = bSampBuff[u + 5];
+                    b[1] = bSampBuff[u + 6];
+                    b[0] = bSampBuff[u + 7];
 
-                    realAudDecd[u / 8] = d;
+                    realAud64[u / 8] = d;
                     // I will need to use maxLengthSamp (its divided by 8?) and this vector inside the compute shader to modify based on values, so all processing must be on this thread, else overwritting and invalidating data at the wrong time could be an issue even with a lock
-                }
-            }
-
+                }// this thing is wrong because I could care less for now to enable this to work - I own 3 diffrent 32 bit mic's I assume this is common...
+            } <-- usless for now and outdated logic...
+            */ 
 
             
             //std::span dat(tmp, maxLengthSamp);

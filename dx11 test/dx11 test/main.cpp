@@ -2442,7 +2442,7 @@ UINT InstanceDataStepRate: The number of instances to draw using the same per-in
     float clientWidth = static_cast<float>(clientRect.right - clientRect.left); //true width
     float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top); //true height
 
-    g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f); //make camrea [left hand projection matrix] --> based on feild of view math, FovAngleY, AspectRatio, NearZ, FarZ
+    g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(0.0f), clientWidth / clientHeight, 0.1f, 100.0f); //make camrea [left hand projection matrix] --> based on feild of view math, FovAngleY, AspectRatio, NearZ, FarZ
     //^^ other types exist
 
     g_d3dDeviceContext->UpdateSubresource( //change sub resource data on the fly for [can be done for constant buffer]
